@@ -1,0 +1,140 @@
+{
+  "projectType": "framework",
+  "projectName": "SvelteKit",
+  "projectDescription": "Web development framework for building fast, performant applications using Svelte",
+  "theme": "willow",
+  "primaryColor": "#FF3E00",
+  "lightColor": "#FF3E00",
+  "darkColor": "#FF3E00",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "project-structure",
+              "web-standards"
+            ]
+          },
+          {
+            "group": "Core Concepts",
+            "pages": [
+              "core-concepts/routing",
+              "core-concepts/load",
+              "core-concepts/form-actions",
+              "core-concepts/page-options",
+              "core-concepts/state-management",
+              "core-concepts/remote-functions"
+            ]
+          },
+          {
+            "group": "Build and Deploy",
+            "pages": [
+              "build-and-deploy/building",
+              "build-and-deploy/adapters",
+              "build-and-deploy/adapter-auto",
+              "build-and-deploy/adapter-node",
+              "build-and-deploy/adapter-static",
+              "build-and-deploy/adapter-cloudflare",
+              "build-and-deploy/adapter-netlify",
+              "build-and-deploy/adapter-vercel"
+            ]
+          },
+          {
+            "group": "Advanced",
+            "pages": [
+              "advanced/hooks",
+              "advanced/page-data",
+              "advanced/service-workers",
+              "advanced/errors",
+              "advanced/link-options",
+              "advanced/images"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Core Modules",
+            "pages": [
+              "api/sveltejs-kit",
+              "api/sveltejs-kit-hooks",
+              "api/sveltejs-kit-node",
+              "api/sveltejs-kit-vite"
+            ]
+          },
+          {
+            "group": "$app Modules",
+            "pages": [
+              "api/app-environment",
+              "api/app-forms",
+              "api/app-navigation",
+              "api/app-paths",
+              "api/app-server",
+              "api/app-state",
+              "api/app-stores"
+            ]
+          },
+          {
+            "group": "$env Modules",
+            "pages": [
+              "api/env-dynamic-private",
+              "api/env-dynamic-public",
+              "api/env-static-private",
+              "api/env-static-public"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "api/configuration",
+              "api/types"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "File-based routing system with nested layouts",
+    "Server-side rendering (SSR) with client-side hydration",
+    "Static site generation (prerendering)",
+    "Form actions for progressive enhancement",
+    "Load functions for data fetching",
+    "Multiple deployment adapters (Node, Cloudflare, Netlify, Vercel, static)",
+    "Built-in development server with HMR via Vite",
+    "Type-safe routing and navigation",
+    "Service worker support",
+    "Image optimization"
+  ],
+  "publicApiSurface": [
+    "error() - Throw HTTP errors",
+    "redirect() - Perform redirects",
+    "json() - Create JSON responses",
+    "text() - Create text responses",
+    "fail() - Handle form action failures",
+    "invalid() - Throw validation errors",
+    "isHttpError() - Check for HTTP errors",
+    "isRedirect() - Check for redirects",
+    "isActionFailure() - Check for action failures",
+    "sequence() - Chain handle hooks",
+    "$app/navigation - goto(), invalidate(), preloadData()",
+    "$app/paths - base, assets, resolve()",
+    "$app/stores - page, navigating, updated",
+    "$app/environment - browser, dev, building, version",
+    "$app/forms - enhance() for progressive form enhancement",
+    "svelte-kit sync - CLI command to sync types",
+    "adapter-auto - Auto-detect deployment platform",
+    "adapter-node - Node.js deployment",
+    "adapter-static - Static site generation",
+    "adapter-cloudflare - Cloudflare deployment",
+    "adapter-netlify - Netlify deployment",
+    "adapter-vercel - Vercel deployment"
+  ]
+}
