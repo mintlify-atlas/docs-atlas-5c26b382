@@ -9,6 +9,10 @@ SvelteKit provides comprehensive TypeScript support with automatically generated
 
 SvelteKit automatically generates `.d.ts` files for each of your endpoints and pages to provide type-safe access to route parameters, load function data, and form actions.
 
+<Note>
+If you need to manually regenerate types (for example, after changes to your route structure), run `npx svelte-kit sync` from your project directory.
+</Note>
+
 ### Route Parameters
 
 For a route like `src/routes/[foo]/[bar]/[baz]/+page.js`, SvelteKit generates:
