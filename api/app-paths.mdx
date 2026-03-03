@@ -1,0 +1,243 @@
+---
+title: '$app/paths'
+description: 'Path utilities and resolvers for SvelteKit applications'
+---
+
+The `$app/paths` module provides utilities for working with application paths, assets, and route resolution.
+
+## base
+
+The base path of the application.
+
+<ParamField path="base" type="string">
+  The value of `config.kit.paths.base`. An empty string if not configured.
+
+  ```js
+  import { base } from '$app/paths';
+
+  const url = `${base}/about`;
+  // If base is '/myapp', url will be '/myapp/about'
+  ```
+</ParamField>
+
+<Info>
+  During server rendering, the base path is relative and depends on the page being rendered.
+</Info>
+
+## assets
+
+The assets path for static files.
+
+<ParamField path="assets" type="string">
+  The value of `config.kit.paths.assets`, falling back to `base` if not configured.
+
+  ```js
+  import { assets } from '$app/paths';
+
+  const imageUrl = `${assets}/images/logo.png`;
+  ```
+</ParamField>
+
+## asset
+
+Resolve the URL of an asset in your `static` directory.
+
+<ParamField path="asset" type="function">
+  Prefix an asset path with the configured assets path.
+
+  **Parameters:**
+  - `file` (string) - Path to the asset file
+
+  **Returns:** string - The resolved asset URL
+
+  **Since:** 2.26
+</ParamField>
+
+```svelte
+<script>
+  import { asset } from '$app/paths';
+</script>
+
+<img alt="a potato" src={asset('/potato.jpg')} />
+
+<link rel="stylesheet" href={asset('/styles/global.css')} />
+```
+
+## resolve
+
+Resolve a pathname or route ID with the base path and parameters.
+
+<ParamField path="resolve" type="function">
+  Resolve a route with base path and optional parameters.
+
+  **Parameters:**
+  - `pathname` (string) - Pathname or route ID
+  - `params` (object) - Optional parameters for route IDs
+
+  **Returns:** string - The resolved pathname
+
+  **Since:** 2.26
+</ParamField>
+
+### Using Pathname
+
+```js
+import { resolve } from '$app/paths';
+
+// Resolve a pathname
+const url = resolve('/blog/hello-world');
+// If base is '/myapp', returns '/myapp/blog/hello-world'
+```
+
+### Using Route ID
+
+```js
+import { resolve } from '$app/paths';
+
+// Resolve a route ID with parameters
+const url = resolve('/blog/[slug]', {
+  slug: 'hello-world'
+});
+// Returns '/blog/hello-world' (with base path prepended)
+```
+
+### Hash Routing
+
+When using hash routing (`config.kit.router.hash`), the pathname is automatically prefixed with `#`:
+
+```js
+import { resolve } from '$app/paths';
+
+const url = resolve('/about');
+// Returns '/myapp#/about' when hash routing is enabled
+```
+
+## match
+
+Match a path or URL to a route ID and extract parameters.
+
+<ParamField path="match" type="function">
+  Match a URL to a route and extract parameters.
+
+  **Parameters:**
+  - `url` (string | URL) - Path or URL to match
+
+  **Returns:** Promise resolving to `{ id, params }` or `null`
+
+  **Since:** 2.52.0
+</ParamField>
+
+```js
+import { match } from '$app/paths';
+
+const route = await match('/blog/hello-world');
+
+if (route?.id === '/blog/[slug]') {
+  const slug = route.params.slug; // 'hello-world'
+  const response = await fetch(`/api/posts/${slug}`);
+  const post = await response.json();
+}
+```
+
+### Using with Full URLs
+
+```js
+import { match } from '$app/paths';
+
+const route = await match(new URL('https://example.com/blog/hello-world'));
+
+if (route) {
+  console.log('Route ID:', route.id);
+  console.log('Parameters:', route.params);
+}
+```
+
+### Returns null for Non-matching URLs
+
+```js
+import { match } from '$app/paths';
+
+const route = await match('/non-existent-page');
+// route is null
+```
+
+## resolveRoute (deprecated)
+
+<Warning>
+  `resolveRoute` is deprecated. Use `resolve` instead.
+</Warning>
+
+<ParamField path="resolveRoute" type="function">
+  Deprecated alias for `resolve`.
+</ParamField>
+
+## Usage Examples
+
+### Building Navigation Links
+
+```svelte
+<script>
+  import { base } from '$app/paths';
+
+  const links = [
+    { href: `${base}/`, label: 'Home' },
+    { href: `${base}/about`, label: 'About' },
+    { href: `${base}/contact`, label: 'Contact' }
+  ];
+</script>
+
+<nav>
+  {#each links as { href, label }}
+    <a {href}>{label}</a>
+  {/each}
+</nav>
+```
+
+### Dynamic Asset Loading
+
+```svelte
+<script>
+  import { asset } from '$app/paths';
+
+  const images = [
+    { src: asset('/images/photo1.jpg'), alt: 'Photo 1' },
+    { src: asset('/images/photo2.jpg'), alt: 'Photo 2' }
+  ];
+</script>
+
+{#each images as { src, alt }}
+  <img {src} {alt} />
+{/each}
+```
+
+### Type-Safe Route Resolution
+
+```ts
+import { resolve } from '$app/paths';
+import type { RouteId } from '$app/types';
+
+function getPostUrl(slug: string): string {
+  return resolve('/blog/[slug]' satisfies RouteId, { slug });
+}
+
+const url = getPostUrl('hello-world');
+// '/blog/hello-world' (with base path)
+```
+
+### Conditional Route Handling
+
+```js
+import { match } from '$app/paths';
+
+async function handleUrl(url) {
+  const route = await match(url);
+
+  if (route?.id === '/blog/[slug]') {
+    return handleBlogPost(route.params.slug);
+  } else if (route?.id === '/products/[id]') {
+    return handleProduct(route.params.id);
+  }
+
+  return handleDefault();
+}
+```

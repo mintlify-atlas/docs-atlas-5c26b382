@@ -1,0 +1,381 @@
+---
+title: '$app/stores'
+description: 'Store-based state management for SvelteKit (deprecated, use $app/state)'
+---
+
+The `$app/stores` module contains store-based equivalents of the exports from [`$app/state`](/api/app-state).
+
+<Warning>
+  If you're using SvelteKit 2.12 or later, use [`$app/state`](/api/app-state) instead. This module is deprecated and maintained for backward compatibility.
+</Warning>
+
+## getStores
+
+Returns all contextual stores.
+
+<ParamField path="getStores" type="function">
+  Returns an object containing `page`, `navigating`, and `updated` stores.
+
+  **Returns:** `{ page, navigating, updated }`
+</ParamField>
+
+<Info>
+  On the server, this must be called during component initialization. Only use this if you need to defer store subscription until after the component has mounted.
+</Info>
+
+```svelte
+<script>
+  import { getStores } from '$app/stores';
+  import { onMount } from 'svelte';
+
+  const { page, navigating } = getStores();
+
+  onMount(() => {
+    // Subscribe after mount
+    const unsubscribe = page.subscribe((value) => {
+      console.log('Page changed:', value);
+    });
+
+    return unsubscribe;
+  });
+</script>
+```
+
+## page
+
+A readable store whose value contains page data.
+
+<ParamField path="page" type="Readable<Page>">
+  Svelte readable store containing current page information.
+</ParamField>
+
+### Store Value Properties
+
+<ResponseField name="url" type="URL">
+  The URL of the current page
+</ResponseField>
+
+<ResponseField name="params" type="Record<string, string>">
+  The parameters extracted from the URL
+</ResponseField>
+
+<ResponseField name="route" type="object">
+  Object with `id` property containing the route ID
+</ResponseField>
+
+<ResponseField name="status" type="number">
+  The HTTP status code of the response
+</ResponseField>
+
+<ResponseField name="error" type="Error | null">
+  The error object, if any
+</ResponseField>
+
+<ResponseField name="data" type="Record<string, any>">
+  Combined data from all `load` functions
+</ResponseField>
+
+<ResponseField name="form" type="any">
+  Data returned from form actions
+</ResponseField>
+
+<ResponseField name="state" type="App.PageState">
+  State set via `goto`, `pushState`, or `replaceState`
+</ResponseField>
+
+### Usage
+
+```svelte
+<script>
+  import { page } from '$app/stores';
+</script>
+
+<p>Currently at {$page.url.pathname}</p>
+
+{#if $page.error}
+  <span class="red">Error: {$page.error.message}</span>
+{:else}
+  <span class="green">All good!</span>
+{/if}
+
+<pre>{JSON.stringify($page.data, null, 2)}</pre>
+```
+
+### Reactive Statements
+
+```svelte
+<script>
+  import { page } from '$app/stores';
+
+  $: pathname = $page.url.pathname;
+  $: slug = $page.params.slug;
+
+  $: console.log('Navigated to:', pathname);
+</script>
+
+<h1>Current path: {pathname}</h1>
+{#if slug}
+  <p>Slug: {slug}</p>
+{/if}
+```
+
+## navigating
+
+A readable store representing navigation state.
+
+<ParamField path="navigating" type="Readable<Navigation | null>">
+  Svelte readable store that is `null` when not navigating, or a Navigation object during navigation.
+</ParamField>
+
+### Navigation Object Properties
+
+<ResponseField name="from" type="object | null">
+  Information about the page being navigated from
+</ResponseField>
+
+<ResponseField name="to" type="object | null">
+  Information about the page being navigated to
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  Navigation type: `'enter'`, `'leave'`, `'link'`, `'goto'`, or `'popstate'`
+</ResponseField>
+
+<ResponseField name="willUnload" type="boolean">
+  Whether the navigation will cause document unload
+</ResponseField>
+
+<ResponseField name="delta" type="number | undefined">
+  Number of history entries to traverse (only for `'popstate'` type)
+</ResponseField>
+
+<ResponseField name="complete" type="Promise<void>">
+  Promise that resolves when navigation completes
+</ResponseField>
+
+### Usage
+
+```svelte
+<script>
+  import { navigating } from '$app/stores';
+</script>
+
+{#if $navigating}
+  <div class="loading">
+    Navigating to {$navigating.to?.url.pathname}...
+  </div>
+{/if}
+```
+
+### Progress Indicator
+
+```svelte
+<script>
+  import { navigating } from '$app/stores';
+
+  $: if ($navigating) {
+    console.log(`Navigation started: ${$navigating.from?.url} → ${$navigating.to?.url}`);
+  }
+</script>
+
+{#if $navigating}
+  <div class="progress-bar" />
+{/if}
+
+<style>
+  .progress-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, #4CAF50, #2196F3);
+    animation: slide 1s infinite;
+  }
+
+  @keyframes slide {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+</style>
+```
+
+## updated
+
+A readable store for detecting app updates.
+
+<ParamField path="updated" type="Readable<boolean> & { check(): Promise<boolean> }">
+  Svelte readable store that's initially `false`, becomes `true` when a new app version is detected.
+</ParamField>
+
+### Methods
+
+<ResponseField name="check" type="function">
+  Force an immediate version check. Returns Promise\<boolean\> indicating if an update is available.
+</ResponseField>
+
+### Usage
+
+```svelte
+<script>
+  import { updated } from '$app/stores';
+</script>
+
+{#if $updated}
+  <div class="toast">
+    <p>A new version of this app is available</p>
+    <button on:click={() => location.reload()}>Reload</button>
+  </div>
+{/if}
+```
+
+### Manual Check
+
+```svelte
+<script>
+  import { updated } from '$app/stores';
+
+  async function checkForUpdates() {
+    const hasUpdate = await updated.check();
+    if (hasUpdate) {
+      if (confirm('New version available. Reload?')) {
+        location.reload();
+      }
+    } else {
+      alert('You are on the latest version');
+    }
+  }
+</script>
+
+<button on:click={checkForUpdates}>Check for updates</button>
+```
+
+<Info>
+  If [`version.pollInterval`](https://svelte.dev/docs/kit/configuration#version) is set, SvelteKit will automatically poll for updates.
+</Info>
+
+## Server vs Client Behavior
+
+<Warning>
+  On the server, stores can only be subscribed to during component initialization. In the browser, they can be subscribed to at any time.
+</Warning>
+
+```svelte
+<script>
+  import { page } from '$app/stores';
+  import { onMount } from 'svelte';
+
+  // ✅ Safe: Subscribe during initialization
+  $: console.log('Current URL:', $page.url);
+
+  // ✅ Safe: Subscribe in onMount (browser only)
+  onMount(() => {
+    const unsubscribe = page.subscribe((value) => {
+      // Handle page changes
+    });
+    return unsubscribe;
+  });
+</script>
+```
+
+## Complete Example
+
+```svelte
+<!--- file: +layout.svelte --->
+<script>
+  import { page, navigating, updated } from '$app/stores';
+
+  // Reactive values
+  $: pathname = $page.url.pathname;
+  $: isLoading = $navigating !== null;
+  $: hasUpdate = $updated;
+
+  // Log navigation events
+  $: if ($navigating) {
+    console.log('Navigation started:', {
+      from: $navigating.from?.url.pathname,
+      to: $navigating.to?.url.pathname,
+      type: $navigating.type
+    });
+  }
+</script>
+
+<!-- Update notification -->
+{#if hasUpdate}
+  <div class="update-toast">
+    <p>New version available</p>
+    <button on:click={() => location.reload()}>Reload</button>
+  </div>
+{/if}
+
+<!-- Loading indicator -->
+{#if isLoading}
+  <div class="loading-bar" />
+{/if}
+
+<!-- Navigation -->
+<nav>
+  <a href="/" class:active={pathname === '/'}>Home</a>
+  <a href="/about" class:active={pathname === '/about'}>About</a>
+  <a href="/contact" class:active={pathname === '/contact'}>Contact</a>
+</nav>
+
+<!-- Content -->
+<main>
+  {#if $page.error}
+    <h1>Error {$page.status}</h1>
+    <p>{$page.error.message}</p>
+  {:else}
+    <slot />
+  {/if}
+</main>
+
+<!-- Footer with debug info -->
+<footer>
+  <p>Route: {$page.route.id}</p>
+  <p>Status: {$page.status}</p>
+</footer>
+
+<style>
+  .active {
+    font-weight: bold;
+    color: #4CAF50;
+  }
+
+  .loading-bar {
+    position: fixed;
+    top: 0;
+    width: 100%;
+    height: 3px;
+    background: linear-gradient(90deg, #4CAF50, #2196F3);
+    animation: loading 1s ease-in-out infinite;
+  }
+
+  @keyframes loading {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+</style>
+```
+
+## Migration to $app/state
+
+If you're using SvelteKit 2.12+, consider migrating to `$app/state`:
+
+```diff
+- import { page, navigating, updated } from '$app/stores';
++ import { page, navigating, updated } from '$app/state';
+
+- $: pathname = $page.url.pathname;
++ const pathname = $derived(page.url.pathname);
+
+- {#if $navigating}
++ {#if navigating}
+    Loading...
+  {/if}
+
+- {#if $updated}
++ {#if updated.current}
+    New version available
+  {/if}
+```

@@ -1,0 +1,280 @@
+---
+title: Link options and preloading
+description: Customize link behavior with data attributes for faster navigation
+---
+
+In SvelteKit, regular `<a>` elements are used to navigate between routes. You can customize their behavior with `data-sveltekit-*` attributes to make your app feel faster.
+
+## Overview
+
+SvelteKit intercepts clicks on `<a>` elements whose `href` is owned by your app and handles navigation without a full page reload. You can customize this with data attributes.
+
+<Note>
+  These options also apply to `<form>` elements with `method="GET"`.
+</Note>
+
+## data-sveltekit-preload-data
+
+Before the browser registers a click, SvelteKit can detect hovers and touch events to get a head start on importing code and fetching data.
+
+<CardGroup cols={2}>
+  <Card title="hover" icon="mouse-pointer">
+    Preloading starts when mouse hovers over link. On mobile, begins on `touchstart`.
+  </Card>
+  
+  <Card title="tap" icon="hand-pointer">
+    Preloading starts on `touchstart` or `mousedown` event.
+  </Card>
+</CardGroup>
+
+### Default configuration
+
+The default template applies hover preloading to all links:
+
+```html src/app.html
+<body data-sveltekit-preload-data="hover">
+	<div style="display: contents">%sveltekit.body%</div>
+</body>
+```
+
+### Custom preloading
+
+<CodeGroup>
+```html Tap-based preloading
+<a data-sveltekit-preload-data="tap" href="/stonks">
+	Get current stonk values
+</a>
+```
+
+```html Disable for specific link
+<div data-sveltekit-preload-data="hover">
+	<a href="/a">Will preload</a>
+	<a href="/b">Will preload</a>
+	
+	<div data-sveltekit-preload-data="false">
+		<a href="/c">Won't preload</a>
+	</div>
+</div>
+```
+</CodeGroup>
+
+<Tip>
+  You can also programmatically invoke `preloadData` from `$app/navigation`:
+  
+  ```javascript
+  import { preloadData } from '$app/navigation';
+  
+  preloadData('/about');
+  ```
+</Tip>
+
+<Warning>
+  Data will never be preloaded if the user has enabled reduced data usage (`navigator.connection.saveData === true`).
+</Warning>
+
+## data-sveltekit-preload-code
+
+Preload just the code for a route without fetching data.
+
+<Steps>
+  <Step title="eager">
+    Links are preloaded immediately
+  </Step>
+  
+  <Step title="viewport">
+    Links are preloaded when they enter the viewport
+  </Step>
+  
+  <Step title="hover">
+    Code is preloaded on hover (data is not)
+  </Step>
+  
+  <Step title="tap">
+    Code is preloaded on tap/mousedown (data is not)
+  </Step>
+</Steps>
+
+```html
+<a data-sveltekit-preload-code="viewport" href="/about">
+	About
+</a>
+```
+
+<Note>
+  `viewport` and `eager` only apply to links present in the DOM immediately after navigation. Links added later (in `{#if ...}` blocks) won't preload until triggered by hover or tap.
+</Note>
+
+## data-sveltekit-reload
+
+Force a full-page navigation instead of client-side routing:
+
+```html
+<a data-sveltekit-reload href="/path">Path</a>
+```
+
+<Accordion title="When to use full-page navigation">
+  - Loading resources that SvelteKit shouldn't handle
+  - Integrating with legacy server-rendered pages
+  - Forcing a complete page refresh
+</Accordion>
+
+<Note>
+  Links with `rel="external"` receive the same treatment and are ignored during prerendering.
+</Note>
+
+## data-sveltekit-replacestate
+
+Replace the current history entry instead of creating a new one:
+
+```html
+<a data-sveltekit-replacestate href="/path">Path</a>
+```
+
+<Tip>
+  Useful for modal dialogs or multi-step forms where you don't want each step in the browser history.
+</Tip>
+
+## data-sveltekit-keepfocus
+
+Keep focus on the current element after navigation:
+
+```html
+<form data-sveltekit-keepfocus>
+	<input type="text" name="query">
+</form>
+```
+
+<Warning>
+  Use sparingly and only on elements that still exist after navigation:
+  - Avoid on `<a>` tags (focus would be on the link, not previous element)
+  - Only use if the element persists after navigation
+  - Consider accessibility implications for screen readers
+</Warning>
+
+## data-sveltekit-noscroll
+
+Prevent scrolling to the top after navigation:
+
+```html
+<a href="path" data-sveltekit-noscroll>Path</a>
+```
+
+<Accordion title="Default scroll behavior">
+  By default, SvelteKit:
+  - Scrolls to `0,0` (top-left) after navigation
+  - Scrolls to element with matching ID if link includes `#hash`
+  - Preserves scroll position on back/forward navigation
+</Accordion>
+
+## Combining options
+
+You can use multiple attributes together:
+
+```html
+<a 
+	data-sveltekit-preload-code="viewport"
+	data-sveltekit-preload-data="tap"
+	data-sveltekit-noscroll
+	href="/dashboard"
+>
+	Dashboard
+</a>
+```
+
+## Inheritance and overriding
+
+Attributes can be applied to parent elements and overridden on children:
+
+```html
+<nav data-sveltekit-preload-data="hover">
+	<!-- These links preload on hover -->
+	<a href="/a">A</a>
+	<a href="/b">B</a>
+	
+	<!-- This link doesn't preload -->
+	<a data-sveltekit-preload-data="false" href="/c">C</a>
+	
+	<!-- This section uses tap preloading -->
+	<div data-sveltekit-preload-data="tap">
+		<a href="/d">D</a>
+	</div>
+</nav>
+```
+
+## Conditional attributes
+
+Apply attributes conditionally in Svelte:
+
+```svelte
+<script>
+	let shouldPreload = $state(true);
+</script>
+
+<div data-sveltekit-preload-data={shouldPreload ? 'hover' : false}>
+	<!-- Links here conditionally preload -->
+</div>
+```
+
+## Performance considerations
+
+<AccordionGroup>
+  <Accordion title="Preload data on hover">
+    **Pros:** Faster perceived navigation (200-300ms head start)
+    
+    **Cons:** Can cause unnecessary requests if users don't click
+    
+    **Best for:** Most content pages with stable data
+  </Accordion>
+  
+  <Accordion title="Preload data on tap">
+    **Pros:** Only loads when user shows clear intent
+    
+    **Cons:** Slightly less head start (only 50-100ms)
+    
+    **Best for:** Pages with rapidly changing data or expensive queries
+  </Accordion>
+  
+  <Accordion title="Preload code only">
+    **Pros:** Minimal bandwidth, code is cacheable
+    
+    **Cons:** Still need to fetch data on navigation
+    
+    **Best for:** Pages where data must be fresh
+  </Accordion>
+  
+  <Accordion title="No preloading">
+    **Pros:** No wasted requests
+    
+    **Cons:** Slower navigation
+    
+    **Best for:** Auth-protected routes or rate-limited APIs
+  </Accordion>
+</AccordionGroup>
+
+## Programmatic preloading
+
+Preload routes in your JavaScript code:
+
+<CodeGroup>
+```javascript Preload data
+import { preloadData } from '$app/navigation';
+
+// Preload when showing a tooltip
+function showTooltip() {
+	preloadData('/user/profile');
+}
+```
+
+```javascript Preload code
+import { preloadCode } from '$app/navigation';
+
+// Preload code for all dashboard routes
+onMount(() => {
+	preloadCode('/dashboard/*');
+});
+```
+</CodeGroup>
+
+<Card title="API Reference" icon="code" href="/api/app-navigation">
+  View the complete `$app/navigation` API
+</Card>

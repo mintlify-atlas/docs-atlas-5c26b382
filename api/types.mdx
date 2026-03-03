@@ -1,0 +1,397 @@
+---
+title: 'Types'
+description: 'TypeScript types and interfaces exported by SvelteKit'
+---
+
+SvelteKit provides comprehensive TypeScript support with automatically generated types and exported interfaces from the `@sveltejs/kit` package.
+
+## Generated Types
+
+SvelteKit automatically generates `.d.ts` files for each of your endpoints and pages to provide type-safe access to route parameters, load function data, and form actions.
+
+### Route Parameters
+
+For a route like `src/routes/[foo]/[bar]/[baz]/+page.js`, SvelteKit generates:
+
+```typescript
+// .svelte-kit/types/src/routes/[foo]/[bar]/[baz]/$types.d.ts
+import type * as Kit from '@sveltejs/kit';
+
+type RouteParams = {
+  foo: string;
+  bar: string;
+  baz: string;
+};
+
+export type PageLoad = Kit.Load<RouteParams>;
+export type RequestHandler = Kit.RequestHandler<RouteParams>;
+```
+
+### Using Generated Types
+
+Import types from the generated `$types` module:
+
+```javascript
+// src/routes/[foo]/[bar]/[baz]/+page.js
+/** @type {import('./$types').PageLoad} */
+export async function load({ params }) {
+  // params is typed as { foo: string; bar: string; baz: string }
+  return {
+    item: await fetchItem(params.foo)
+  };
+}
+```
+
+```javascript
+// src/routes/[foo]/[bar]/[baz]/+server.js
+/** @type {import('./$types').RequestHandler} */
+export async function GET({ params }) {
+  // params.foo, params.bar, params.baz are all typed as string
+  return new Response('Hello');
+}
+```
+
+### Component Props
+
+Starting with SvelteKit 2.16.0, helper types are provided for component props:
+
+```svelte
+<!-- src/routes/+page.svelte -->
+<script>
+  /** @type {import('./$types').PageProps} */
+  let { data, form } = $props();
+</script>
+```
+
+`PageProps` defines `data: PageData` and `form: ActionData` (when actions are defined).
+
+`LayoutProps` defines `data: LayoutData` and `children: Snippet`.
+
+## Exported Types
+
+### Adapter
+
+<ParamField path="Adapter" type="interface">
+  Adapters are responsible for taking the production build and deploying it to a platform.
+  
+  ```typescript
+  interface Adapter {
+    name: string;
+    adapt: (builder: Builder) => MaybePromise<void>;
+    supports?: {
+      read?: (details: { config: any; route: { id: string } }) => boolean;
+      instrumentation?: () => boolean;
+    };
+    emulate?: () => MaybePromise<Emulator>;
+  }
+  ```
+</ParamField>
+
+### Config
+
+<ParamField path="Config" type="interface">
+  The configuration object for your SvelteKit project.
+  
+  ```typescript
+  interface Config extends SvelteConfig {
+    kit?: KitConfig;
+    [key: string]: any;
+  }
+  ```
+  
+  See [Configuration](/api/configuration) for all available options.
+</ParamField>
+
+### KitConfig
+
+<ParamField path="KitConfig" type="interface">
+  SvelteKit-specific configuration options.
+  
+  See [Configuration](/api/configuration#kitconfig) for details.
+</ParamField>
+
+### RequestEvent
+
+<ParamField path="RequestEvent" type="interface">
+  The event object passed to hooks and server routes.
+  
+  ```typescript
+  interface RequestEvent<Params = Partial<Record<string, string>>> {
+    cookies: Cookies;
+    fetch: typeof fetch;
+    getClientAddress: () => string;
+    locals: App.Locals;
+    params: Params;
+    platform: App.Platform;
+    request: Request;
+    route: { id: string | null };
+    setHeaders: (headers: Record<string, string>) => void;
+    url: URL;
+    isDataRequest: boolean;
+    isSubRequest: boolean;
+  }
+  ```
+</ParamField>
+
+### Load
+
+<ParamField path="Load" type="type">
+  The type for universal load functions.
+  
+  ```typescript
+  type Load<
+    Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
+    ParentData extends Record<string, any> = Record<string, any>,
+    OutputData extends Record<string, any> | void = Record<string, any> | void,
+    RouteId extends string | null = string | null
+  > = (event: LoadEvent<Params, ParentData, RouteId>) => MaybePromise<OutputData>;
+  ```
+  
+  Example:
+  ```javascript
+  /** @type {import('./$types').PageLoad} */
+  export async function load({ params, fetch }) {
+    const res = await fetch(`/api/items/${params.id}`);
+    return {
+      item: await res.json()
+    };
+  }
+  ```
+</ParamField>
+
+### ServerLoad
+
+<ParamField path="ServerLoad" type="type">
+  The type for server-only load functions.
+  
+  ```typescript
+  type ServerLoad<
+    Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
+    ParentData extends Record<string, any> = Record<string, any>,
+    OutputData extends Record<string, any> | void = Record<string, any> | void,
+    RouteId extends string | null = string | null
+  > = (event: ServerLoadEvent<Params, ParentData, RouteId>) => MaybePromise<OutputData>;
+  ```
+  
+  Server load functions have access to `locals`, `platform`, and can return promises.
+</ParamField>
+
+### RequestHandler
+
+<ParamField path="RequestHandler" type="type">
+  The type for API route handlers.
+  
+  ```typescript
+  type RequestHandler<
+    Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
+    RouteId extends string | null = string | null
+  > = (event: RequestEvent<Params, RouteId>) => MaybePromise<Response>;
+  ```
+  
+  Example:
+  ```javascript
+  /** @type {import('./$types').RequestHandler} */
+  export async function GET({ params }) {
+    return new Response(JSON.stringify({ id: params.id }));
+  }
+  ```
+</ParamField>
+
+### Actions
+
+<ParamField path="Actions" type="type">
+  The type for form actions.
+  
+  ```typescript
+  type Actions<
+    Params extends Partial<Record<string, string>> = Partial<Record<string, string>>,
+    OutputData extends Record<string, any> | void = Record<string, any> | void,
+    RouteId extends string | null = string | null
+  > = Record<string, Action<Params, OutputData, RouteId>>;
+  ```
+  
+  Example:
+  ```javascript
+  /** @type {import('./$types').Actions} */
+  export const actions = {
+    default: async ({ request }) => {
+      const data = await request.formData();
+      // process data
+    }
+  };
+  ```
+</ParamField>
+
+### Handle
+
+<ParamField path="Handle" type="type">
+  The type for the server-side `handle` hook.
+  
+  ```typescript
+  type Handle = (input: {
+    event: RequestEvent;
+    resolve: (event: RequestEvent, opts?: ResolveOptions) => MaybePromise<Response>;
+  }) => MaybePromise<Response>;
+  ```
+  
+  Example:
+  ```javascript
+  /** @type {import('@sveltejs/kit').Handle} */
+  export async function handle({ event, resolve }) {
+    // Add custom header
+    const response = await resolve(event);
+    response.headers.set('X-Custom-Header', 'value');
+    return response;
+  }
+  ```
+</ParamField>
+
+### HandleServerError
+
+<ParamField path="HandleServerError" type="type">
+  The type for the server-side `handleError` hook.
+  
+  ```typescript
+  type HandleServerError = (input: {
+    error: unknown;
+    event: RequestEvent;
+    status: number;
+    message: string;
+  }) => MaybePromise<void | App.Error>;
+  ```
+</ParamField>
+
+### HandleClientError
+
+<ParamField path="HandleClientError" type="type">
+  The type for the client-side `handleError` hook.
+  
+  ```typescript
+  type HandleClientError = (input: {
+    error: unknown;
+    event: NavigationEvent;
+    status: number;
+    message: string;
+  }) => MaybePromise<void | App.Error>;
+  ```
+</ParamField>
+
+### Cookies
+
+<ParamField path="Cookies" type="interface">
+  The cookies API available in hooks and server routes.
+  
+  ```typescript
+  interface Cookies {
+    get(name: string, opts?: CookieParseOptions): string | undefined;
+    getAll(opts?: CookieParseOptions): Array<{ name: string; value: string }>;
+    set(name: string, value: string, opts: CookieSerializeOptions & { path: string }): void;
+    delete(name: string, opts: CookieSerializeOptions & { path: string }): void;
+    serialize(name: string, value: string, opts: CookieSerializeOptions & { path: string }): string;
+  }
+  ```
+</ParamField>
+
+## App Namespace
+
+The `App` namespace in `src/app.d.ts` contains ambient types that influence SvelteKit features:
+
+```typescript
+// src/app.d.ts
+declare global {
+  namespace App {
+    interface Error {
+      // Custom error properties
+    }
+    
+    interface Locals {
+      // Custom locals properties
+      user?: { id: string; name: string };
+    }
+    
+    interface PageData {
+      // Custom page data properties
+    }
+    
+    interface PageState {
+      // Custom page state properties
+    }
+    
+    interface Platform {
+      // Custom platform properties (e.g., env for Cloudflare)
+    }
+  }
+}
+
+export {};
+```
+
+### App.Error
+
+<ParamField path="App.Error" type="interface">
+  The shape of the error object returned by `handleError` hooks.
+  
+  ```typescript
+  interface Error {
+    message: string;
+    code?: string;
+    // Add custom properties
+  }
+  ```
+</ParamField>
+
+### App.Locals
+
+<ParamField path="App.Locals" type="interface">
+  The shape of `event.locals`, which is available in hooks and server routes.
+  
+  ```typescript
+  interface Locals {
+    user?: { id: string; email: string };
+    session?: string;
+  }
+  ```
+</ParamField>
+
+### App.PageData
+
+<ParamField path="App.PageData" type="interface">
+  Augments the `data` object available in `+page.svelte` and `+layout.svelte`.
+</ParamField>
+
+### App.Platform
+
+<ParamField path="App.Platform" type="interface">
+  Platform-specific context (e.g., Cloudflare bindings, Vercel edge config).
+  
+  ```typescript
+  interface Platform {
+    env: {
+      KV: KVNamespace;
+      DB: D1Database;
+    };
+  }
+  ```
+</ParamField>
+
+## TypeScript Config
+
+SvelteKit generates a `.svelte-kit/tsconfig.json` file that your project's `tsconfig.json` should extend:
+
+```json
+{
+  "extends": "./.svelte-kit/tsconfig.json"
+}
+```
+
+The generated config includes:
+
+- Path mappings for `$lib`, `$app/*`, etc.
+- `rootDirs` for `$types` imports
+- Compiler options required by SvelteKit
+
+## See Also
+
+- [Configuration](/api/configuration)
+- [TypeScript Documentation](https://www.typescriptlang.org/)
+- [SvelteKit Type Safety](https://svelte.dev/docs/kit/types)

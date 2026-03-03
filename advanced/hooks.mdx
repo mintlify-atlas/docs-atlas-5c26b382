@@ -1,0 +1,291 @@
+---
+title: Hooks
+description: Use server and client hooks to control SvelteKit's behavior app-wide
+---
+
+Hooks are app-wide functions you declare that SvelteKit calls in response to specific events, giving you fine-grained control over the framework's behavior.
+
+## Overview
+
+There are three hooks files, all optional:
+
+<CardGroup cols={3}>
+  <Card title="src/hooks.server.js" icon="server">
+    Server-only hooks
+  </Card>
+  <Card title="src/hooks.client.js" icon="browser">
+    Client-only hooks
+  </Card>
+  <Card title="src/hooks.js" icon="globe">
+    Universal hooks (both)
+  </Card>
+</CardGroup>
+
+Code in these modules runs when the application starts up, making them useful for initializing database clients and other setup tasks.
+
+## Server hooks
+
+The following hooks can be added to `src/hooks.server.js`:
+
+### handle
+
+This function runs every time the SvelteKit server receives a request and determines the response. It receives an `event` object and a `resolve` function that renders the route.
+
+<CodeGroup>
+```javascript Basic usage
+/// file: src/hooks.server.js
+export async function handle({ event, resolve }) {
+	if (event.url.pathname.startsWith('/custom')) {
+		return new Response('custom response');
+	}
+
+	const response = await resolve(event);
+	return response;
+}
+```
+
+```javascript With user authentication
+export async function handle({ event, resolve }) {
+	event.locals.user = await getUserInformation(event.cookies.get('sessionid'));
+
+	const response = await resolve(event);
+	response.headers.set('x-custom-header', 'potato');
+
+	return response;
+}
+```
+</CodeGroup>
+
+<Note>
+  Requests for static assets and prerendered pages are not handled by SvelteKit.
+</Note>
+
+#### Advanced resolve options
+
+The `resolve` function accepts a second parameter with the following options:
+
+<ResponseField name="transformPageChunk" type="function">
+  Applies custom transforms to HTML chunks. Useful for search-and-replace operations.
+  
+  ```javascript
+  transformPageChunk: ({ html }) => html.replace('old', 'new')
+  ```
+</ResponseField>
+
+<ResponseField name="filterSerializedResponseHeaders" type="function">
+  Determines which headers are included in serialized responses when a `load` function uses `fetch`.
+  
+  ```javascript
+  filterSerializedResponseHeaders: (name) => name.startsWith('x-')
+  ```
+</ResponseField>
+
+<ResponseField name="preload" type="function">
+  Determines which files are added to the `<head>` tag for preloading.
+  
+  ```javascript
+  preload: ({ type, path }) => type === 'js' || path.includes('/important/')
+  ```
+</ResponseField>
+
+<Accordion title="Complete example with all options">
+```javascript
+export async function handle({ event, resolve }) {
+	const response = await resolve(event, {
+		transformPageChunk: ({ html }) => html.replace('old', 'new'),
+		filterSerializedResponseHeaders: (name) => name.startsWith('x-'),
+		preload: ({ type, path }) => type === 'js' || path.includes('/important/')
+	});
+
+	return response;
+}
+```
+</Accordion>
+
+### handleFetch
+
+Modify or replace `fetch` requests that run on the server during SSR or prerendering.
+
+```javascript
+export async function handleFetch({ request, fetch }) {
+	if (request.url.startsWith('https://api.yourapp.com/')) {
+		// Rewrite API requests to hit internal endpoint
+		request = new Request(
+			request.url.replace('https://api.yourapp.com/', 'http://localhost:9999/'),
+			request
+		);
+	}
+
+	return fetch(request);
+}
+```
+
+<Tip>
+  Use `handleFetch` to bypass proxies and load balancers when making internal API requests during SSR.
+</Tip>
+
+### handleValidationError
+
+Called when a remote function receives an argument that doesn't match its schema.
+
+```javascript
+export function handleValidationError({ issues }) {
+	return {
+		message: 'Validation failed',
+		code: 'VALIDATION_ERROR'
+	};
+}
+```
+
+<Warning>
+  Be thoughtful about what information you expose here, as validation failures often indicate malicious requests.
+</Warning>
+
+## Shared hooks
+
+These hooks work in both `src/hooks.server.js` and `src/hooks.client.js`:
+
+### handleError
+
+Called when an unexpected error is thrown during loading or rendering.
+
+<Steps>
+  <Step title="Log the error">
+    Send errors to a reporting service like Sentry
+  </Step>
+  <Step title="Generate safe representation">
+    Return a sanitized error object that's safe to show users
+  </Step>
+  <Step title="Add custom properties">
+    Include tracking IDs or other custom fields
+  </Step>
+</Steps>
+
+<CodeGroup>
+```javascript Server
+import * as Sentry from '@sentry/sveltekit';
+
+Sentry.init({/*...*/})
+
+export async function handleError({ error, event, status, message }) {
+	const errorId = crypto.randomUUID();
+
+	Sentry.captureException(error, {
+		extra: { event, errorId, status }
+	});
+
+	return {
+		message: 'Whoops!',
+		errorId
+	};
+}
+```
+
+```javascript Client
+import * as Sentry from '@sentry/sveltekit';
+
+Sentry.init({/*...*/})
+
+export async function handleError({ error, event, status, message }) {
+	const errorId = crypto.randomUUID();
+
+	Sentry.captureException(error, {
+		extra: { event, errorId, status }
+	});
+
+	return {
+		message: 'Whoops!',
+		errorId
+	};
+}
+```
+</CodeGroup>
+
+<Note>
+  Make sure that `handleError` never throws an error itself.
+</Note>
+
+### init
+
+Runs once when the server starts or the app initializes in the browser.
+
+```javascript
+import * as db from '$lib/server/database';
+
+export async function init() {
+	await db.connect();
+}
+```
+
+<Warning>
+  In the browser, asynchronous work in `init` will delay hydration. Be mindful of what you put here.
+</Warning>
+
+## Universal hooks
+
+These hooks run on both server and client (in `src/hooks.js`):
+
+### reroute
+
+Runs before `handle` and changes how URLs are translated into routes.
+
+```javascript
+const translated = {
+	'/en/about': '/en/about',
+	'/de/ueber-uns': '/de/about',
+	'/fr/a-propos': '/fr/about',
+};
+
+export function reroute({ url }) {
+	if (url.pathname in translated) {
+		return translated[url.pathname];
+	}
+}
+```
+
+<Note>
+  Using `reroute` will not change the browser's address bar or the value of `event.url`.
+</Note>
+
+### transport
+
+Allows custom types to be serialized across the server/client boundary.
+
+```javascript
+import { Vector } from '$lib/math';
+
+export const transport = {
+	Vector: {
+		encode: (value) => value instanceof Vector && [value.x, value.y],
+		decode: ([x, y]) => new Vector(x, y)
+	}
+};
+```
+
+## Sequencing multiple hooks
+
+You can use the `sequence` helper to run multiple `handle` functions:
+
+```javascript
+import { sequence } from '@sveltejs/kit/hooks';
+
+async function first({ event, resolve }) {
+	console.log('first pre-processing');
+	const result = await resolve(event);
+	console.log('first post-processing');
+	return result;
+}
+
+async function second({ event, resolve }) {
+	console.log('second pre-processing');
+	const result = await resolve(event);
+	console.log('second post-processing');
+	return result;
+}
+
+export const handle = sequence(first, second);
+```
+
+<Card title="Learn more" icon="book" href="https://svelte.dev/tutorial/kit/handle">
+  Follow the interactive tutorial on hooks
+</Card>

@@ -1,0 +1,184 @@
+---
+title: '$app/forms'
+description: 'Progressive enhancement utilities for form submissions in SvelteKit'
+---
+
+The `$app/forms` module provides utilities for enhancing HTML forms with client-side interactivity while maintaining functionality without JavaScript.
+
+## enhance
+
+The `enhance` action progressively enhances a `<form>` element that otherwise would work without JavaScript.
+
+<ParamField path="enhance" type="function">
+  Enhances a form element with progressive enhancement capabilities.
+
+  **Parameters:**
+  - `form_element` (HTMLFormElement) - The form element to enhance
+  - `submit` (SubmitFunction) - Optional callback function invoked upon submission
+
+  **Returns:** An object with a `destroy` method for cleanup
+</ParamField>
+
+### Basic Usage
+
+```svelte
+<script>
+  import { enhance } from '$app/forms';
+</script>
+
+<form method="POST" use:enhance>
+  <input name="username" />
+  <button>Submit</button>
+</form>
+```
+
+### Custom Submit Handler
+
+The `submit` function is called upon submission with the given FormData and the `action` that should be triggered. If `cancel` is called, the form will not be submitted.
+
+```svelte
+<script>
+  import { enhance } from '$app/forms';
+
+  let loading = false;
+</script>
+
+<form
+  method="POST"
+  use:enhance={({ formData, cancel, controller }) => {
+    loading = true;
+
+    // You can modify formData before submission
+    formData.append('timestamp', Date.now());
+
+    // Optionally cancel the submission
+    if (/* some condition */) {
+      cancel();
+      return;
+    }
+
+    // Return a callback to handle the response
+    return async ({ result, update }) => {
+      loading = false;
+
+      if (result.type === 'success') {
+        // Custom success handling
+        await update();
+      }
+    };
+  }}
+>
+  <input name="data" />
+  <button disabled={loading}>Submit</button>
+</form>
+```
+
+### Submit Function Parameters
+
+<ParamField path="action" type="URL">
+  The URL to which the form is being submitted
+</ParamField>
+
+<ParamField path="formData" type="FormData">
+  The FormData object containing form values
+</ParamField>
+
+<ParamField path="formElement" type="HTMLFormElement">
+  Reference to the form element
+</ParamField>
+
+<ParamField path="cancel" type="function">
+  Call this function to prevent form submission
+</ParamField>
+
+<ParamField path="controller" type="AbortController">
+  AbortController to cancel the submission if another one starts
+</ParamField>
+
+<ParamField path="submitter" type="HTMLElement | null">
+  The element that triggered the submission (button or input)
+</ParamField>
+
+### Callback Function Parameters
+
+<ParamField path="result" type="ActionResult">
+  The response from the server action
+</ParamField>
+
+<ParamField path="update" type="function">
+  Invokes the default behavior. Accepts options:
+  - `reset: false` - Don't reset form values after successful submission
+  - `invalidateAll: false` - Don't call `invalidateAll` after submission
+</ParamField>
+
+## deserialize
+
+Use this function to deserialize the response from a form submission.
+
+<ParamField path="deserialize" type="function">
+  Deserializes form action responses.
+
+  **Parameters:**
+  - `result` (string) - The serialized response text
+
+  **Returns:** ActionResult object
+</ParamField>
+
+```js
+import { deserialize } from '$app/forms';
+
+async function handleSubmit(event) {
+  const response = await fetch('/form?/action', {
+    method: 'POST',
+    body: new FormData(event.target)
+  });
+
+  const result = deserialize(await response.text());
+  // result.type is 'success' | 'failure' | 'redirect' | 'error'
+}
+```
+
+## applyAction
+
+Applies an action result to the current page state.
+
+<ParamField path="applyAction" type="function">
+  Applies the given action result to the page.
+
+  **Parameters:**
+  - `result` (ActionResult) - The action result to apply
+
+  **Returns:** Promise\<void\>
+</ParamField>
+
+```js
+import { applyAction } from '$app/forms';
+
+const result = {
+  type: 'success',
+  status: 200,
+  data: { message: 'Form submitted successfully' }
+};
+
+await applyAction(result);
+```
+
+## Default Behavior
+
+If you don't provide a custom submit function or callback, the default behavior is:
+
+- Updates the `form` prop with returned data if the action is on the same page
+- Updates `page.status`
+- Resets the form and invalidates all data on successful submission with no redirect
+- Redirects on redirect response
+- Navigates to nearest error page on unexpected error
+
+## Important Notes
+
+<Warning>
+  `use:enhance` can only be used on `<form>` elements with `method="POST"`.
+</Warning>
+
+<Info>
+  Forms with file inputs must include `enctype="multipart/form-data"` attribute.
+</Info>

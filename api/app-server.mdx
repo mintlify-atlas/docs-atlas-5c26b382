@@ -1,0 +1,388 @@
+---
+title: '$app/server'
+description: 'Server-side utilities and remote functions for SvelteKit applications'
+---
+
+The `$app/server` module provides server-only utilities, including asset reading and remote function creation.
+
+## read
+
+Read the contents of an imported asset from the filesystem.
+
+<ParamField path="read" type="function">
+  Read an imported asset file.
+
+  **Parameters:**
+  - `asset` (string) - The imported asset path
+
+  **Returns:** Response object with file contents
+
+  **Since:** 2.4.0
+</ParamField>
+
+```js
+import { read } from '$app/server';
+import somefile from './somefile.txt';
+
+const asset = read(somefile);
+const text = await asset.text();
+```
+
+### Reading Different File Types
+
+```js
+import { read } from '$app/server';
+import dataFile from './data.json';
+import imageFile from './image.png';
+
+// Read JSON
+const jsonResponse = read(dataFile);
+const data = await jsonResponse.json();
+
+// Read binary data
+const imageResponse = read(imageFile);
+const blob = await imageResponse.blob();
+```
+
+<Warning>
+  Ensure your adapter supports the `read` implementation. Modern adapters include this functionality.
+</Warning>
+
+## getRequestEvent
+
+Get the current request event.
+
+<ParamField path="getRequestEvent" type="function">
+  Retrieve the current RequestEvent.
+
+  **Returns:** RequestEvent | undefined
+</ParamField>
+
+```js
+import { getRequestEvent } from '$app/server';
+
+const event = getRequestEvent();
+if (event) {
+  console.log('Request URL:', event.url);
+  console.log('Headers:', event.request.headers);
+}
+```
+
+## Remote Functions
+
+Remote functions allow you to call server-side code from the browser with type safety and automatic serialization.
+
+### query
+
+Create a remote query for data fetching.
+
+<ParamField path="query" type="function">
+  Creates a remote query that can be called from the browser.
+
+  **Parameters:**
+  - `schema` (StandardSchema | 'unchecked') - Optional validation schema
+  - `fn` (function) - The server function to execute
+
+  **Returns:** RemoteQueryFunction
+
+  **Since:** 2.27
+</ParamField>
+
+#### No Arguments
+
+```js
+// routes/+page.server.js
+import { query } from '$app/server';
+
+export const getServerTime = query(() => {
+  return new Date().toISOString();
+});
+```
+
+```svelte
+<!-- routes/+page.svelte -->
+<script>
+  import { getServerTime } from './+page.server.js';
+
+  const time = getServerTime();
+</script>
+
+{#await time}
+  Loading...
+{:then value}
+  Server time: {value}
+{/await}
+```
+
+#### With Validation Schema
+
+```js
+import { query } from '$app/server';
+import { z } from 'zod';
+
+const getUserSchema = z.object({
+  id: z.string()
+});
+
+export const getUser = query(getUserSchema, async ({ id }) => {
+  const user = await db.users.findById(id);
+  return user;
+});
+```
+
+```svelte
+<script>
+  import { getUser } from './+page.server.js';
+
+  const user = getUser({ id: '123' });
+</script>
+
+{#await user}
+  Loading user...
+{:then data}
+  <h1>{data.name}</h1>
+{/await}
+```
+
+#### Unchecked Input
+
+```js
+import { query } from '$app/server';
+
+export const searchPosts = query('unchecked', async (searchTerm) => {
+  const posts = await db.posts.search(searchTerm);
+  return posts;
+});
+```
+
+### Query Methods
+
+<ResponseField name="refresh" type="function">
+  Force refresh the query data
+</ResponseField>
+
+<ResponseField name="set" type="function">
+  Manually set the query value
+</ResponseField>
+
+<ResponseField name="withOverride" type="function">
+  Create a query with overridden options (client-side only)
+</ResponseField>
+
+### command
+
+Create a remote command for mutations.
+
+<ParamField path="command" type="function">
+  Creates a remote command that executes server-side mutations.
+
+  **Parameters:**
+  - `schema` (StandardSchema | 'unchecked') - Optional validation schema
+  - `fn` (function) - The server function to execute
+
+  **Returns:** RemoteCommand
+
+  **Since:** 2.27
+</ParamField>
+
+```js
+// routes/+page.server.js
+import { command } from '$app/server';
+import { z } from 'zod';
+
+const updateUserSchema = z.object({
+  id: z.string(),
+  name: z.string()
+});
+
+export const updateUser = command(updateUserSchema, async ({ id, name }) => {
+  await db.users.update(id, { name });
+  return { success: true };
+});
+```
+
+```svelte
+<!-- routes/+page.svelte -->
+<script>
+  import { updateUser } from './+page.server.js';
+
+  async function handleSubmit() {
+    const result = await updateUser({ id: '123', name: 'John' });
+    console.log(result); // { success: true }
+  }
+</script>
+
+<button onclick={handleSubmit}>Update User</button>
+```
+
+<Info>
+  Commands can only be called from mutative request methods (POST, PUT, PATCH, DELETE) or during client-side execution.
+</Info>
+
+### form
+
+Create a remote form for progressive enhancement.
+
+<ParamField path="form" type="function">
+  Creates a form object that can be spread onto a `<form>` element.
+
+  **Parameters:**
+  - `schema` (StandardSchema | 'unchecked') - Optional validation schema
+  - `fn` (function) - The server function to execute
+
+  **Returns:** RemoteForm
+
+  **Since:** 2.27
+</ParamField>
+
+```js
+// routes/+page.server.js
+import { form } from '$app/server';
+import { z } from 'zod';
+
+const contactSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  message: z.string().min(10)
+});
+
+export const contactForm = form(contactSchema, async (data, issue) => {
+  // Validation errors are automatically handled
+  await sendEmail(data);
+  return { success: true };
+});
+```
+
+```svelte
+<script>
+  import { contactForm } from './+page.server.js';
+</script>
+
+<form {...contactForm.enhance()}>
+  <input name="name" />
+  <input name="email" type="email" />
+  <textarea name="message"></textarea>
+  <button>Send</button>
+</form>
+```
+
+### prerender
+
+Create a remote function that can be prerendered.
+
+<ParamField path="prerender" type="function">
+  Creates a remote function that works during prerendering.
+
+  **Parameters:**
+  - `schema` (StandardSchema | 'unchecked') - Optional validation schema
+  - `fn` (function) - The server function to execute
+  - `options` (object) - Configuration options
+
+  **Returns:** RemotePrerenderFunction
+
+  **Since:** 2.27
+</ParamField>
+
+#### Options
+
+<ParamField path="inputs" type="function">
+  Generator function that yields inputs for prerendering
+</ParamField>
+
+<ParamField path="dynamic" type="boolean">
+  Whether the function can be called with dynamic inputs
+</ParamField>
+
+```js
+import { prerender } from '$app/server';
+import { z } from 'zod';
+
+const getPostSchema = z.object({
+  slug: z.string()
+});
+
+export const getPost = prerender(
+  getPostSchema,
+  async ({ slug }) => {
+    const post = await db.posts.findBySlug(slug);
+    return post;
+  },
+  {
+    async *inputs() {
+      const posts = await db.posts.findAll();
+      for (const post of posts) {
+        yield { slug: post.slug };
+      }
+    },
+    dynamic: true
+  }
+);
+```
+
+## Usage Examples
+
+### Type-Safe Data Fetching
+
+```js
+// routes/blog/+page.server.js
+import { query } from '$app/server';
+import { z } from 'zod';
+
+const paginationSchema = z.object({
+  page: z.number().min(1).default(1),
+  limit: z.number().min(1).max(100).default(10)
+});
+
+export const getPosts = query(paginationSchema, async ({ page, limit }) => {
+  const posts = await db.posts.paginate({ page, limit });
+  return posts;
+});
+```
+
+### Form with Custom Validation
+
+```js
+import { form } from '$app/server';
+import { z } from 'zod';
+
+const registerSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(8)
+});
+
+export const register = form(registerSchema, async (data, issue) => {
+  const existingUser = await db.users.findByEmail(data.email);
+
+  if (existingUser) {
+    issue('email', 'Email already registered');
+    return;
+  }
+
+  const user = await db.users.create(data);
+  return { userId: user.id };
+});
+```
+
+### Optimistic Updates with Commands
+
+```svelte
+<script>
+  import { updatePost } from './+page.server.js';
+
+  let post = $state({ title: 'Original' });
+
+  async function save() {
+    const originalTitle = post.title;
+    // Optimistic update
+    post.title = 'Saving...';
+
+    try {
+      await updatePost({ id: post.id, title: originalTitle });
+      post.title = originalTitle;
+    } catch (error) {
+      // Revert on error
+      post.title = originalTitle;
+    }
+  }
+</script>
+```

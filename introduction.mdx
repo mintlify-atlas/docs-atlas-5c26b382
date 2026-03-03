@@ -1,0 +1,98 @@
+---
+title: Introduction to SvelteKit
+description: SvelteKit is a framework for rapidly developing robust, performant web applications using Svelte
+---
+
+<Note>
+If you're new to Svelte or SvelteKit, check out the [interactive tutorial](https://svelte.dev/tutorial/kit). If you get stuck, reach out for help in the [Discord chatroom](https://svelte.dev/chat).
+</Note>
+
+## What is SvelteKit?
+
+SvelteKit is a framework for rapidly developing robust, performant web applications using [Svelte](https://svelte.dev). If you're coming from React, SvelteKit is similar to Next. If you're coming from Vue, SvelteKit is similar to Nuxt.
+
+SvelteKit provides everything you need to build modern web applications:
+
+<CardGroup cols={2}>
+  <Card title="File-based routing" icon="folder-tree">
+    Create pages by adding files to `src/routes`. Dynamic routes, layouts, and error handling built in.
+  </Card>
+  <Card title="Server-side rendering" icon="server">
+    Fast initial page loads with SSR, then seamless client-side navigation without full page reloads.
+  </Card>
+  <Card title="Zero-config deployment" icon="rocket">
+    Deploy anywhere with adapters for Node, Vercel, Netlify, Cloudflare, and more platforms.
+  </Card>
+  <Card title="Web standards" icon="globe">
+    Built on standard Web APIs like `fetch`, `Request`, `Response`, and `FormData`.
+  </Card>
+  <Card title="Progressive enhancement" icon="arrow-up">
+    Forms work without JavaScript, then enhance with client-side validation and animations.
+  </Card>
+  <Card title="TypeScript support" icon="code">
+    First-class TypeScript support with automatic type generation for routes.
+  </Card>
+</CardGroup>
+
+## What is Svelte?
+
+Svelte is a way of writing user interface components — like a navigation bar, comment section, or contact form — that users see and interact with in their browsers. The Svelte compiler converts your components to JavaScript that can be run to render the HTML for the page and to CSS that styles the page.
+
+You don't need to know Svelte to understand this guide, but it will help. If you'd like to learn more, check out [the Svelte tutorial](https://svelte.dev/tutorial).
+
+## SvelteKit vs Svelte
+
+Svelte renders UI components. You can compose these components and render an entire page with just Svelte, but you need more than just Svelte to write an entire app.
+
+SvelteKit helps you build web apps while following modern best practices and providing solutions to common development challenges. It offers everything from basic functionalities — like a router that updates your UI when a link is clicked — to more advanced capabilities:
+
+- **Build optimizations** to load only the minimal required code via [Vite](https://vitejs.dev/guide/features.html#build-optimizations)
+- **Offline support** through service workers
+- **Preloading** pages before user navigation for instant page transitions
+- **Configurable rendering** to handle different parts of your app on the server via SSR, in the browser through CSR, or at build-time with prerendering
+- **Image optimization** for responsive images
+- **Hot Module Replacement** for instant updates during development
+
+Building an app with all the modern best practices is fiendishly complicated, but SvelteKit does all the boring stuff for you so that you can get on with the creative part.
+
+## Development experience
+
+SvelteKit reflects changes to your code in the browser instantly to provide a lightning-fast and feature-rich development experience. It leverages [Vite](https://vitejs.dev/) with a [Svelte plugin](https://github.com/sveltejs/vite-plugin-svelte) to enable Hot Module Replacement (HMR).
+
+## Key features
+
+### Routing
+
+Each page of your app is a Svelte component. You create pages by adding files to the `src/routes` directory. These will be server-rendered so that a user's first visit to your app is as fast as possible, then a client-side app takes over.
+
+### Forms and data
+
+SvelteKit embraces the web platform. Forms work without JavaScript through progressive enhancement, then get enhanced with client-side functionality when available.
+
+### Flexibility
+
+You can build various types of applications with SvelteKit:
+
+- Static sites with prerendering
+- Single-page applications (SPAs)
+- Server-rendered apps
+- Hybrid apps mixing different rendering modes
+- Mobile apps with Tauri or Capacitor
+- Desktop apps with Tauri, Wails, or Electron
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="bolt" href="/quickstart">
+    Get started building your first SvelteKit app in minutes
+  </Card>
+  <Card title="Project structure" icon="folder" href="/project-structure">
+    Learn about the files and folders in a SvelteKit project
+  </Card>
+  <Card title="Web standards" icon="book" href="/web-standards">
+    Understand how SvelteKit builds on web platform APIs
+  </Card>
+  <Card title="Core concepts" icon="lightbulb" href="/core-concepts/routing">
+    Dive into routing, loading data, and form actions
+  </Card>
+</CardGroup>

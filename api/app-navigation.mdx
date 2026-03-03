@@ -1,0 +1,364 @@
+---
+title: '$app/navigation'
+description: 'Client-side navigation utilities for SvelteKit applications'
+---
+
+The `$app/navigation` module provides functions for programmatic navigation and managing the navigation lifecycle.
+
+## goto
+
+Navigate programmatically to a given route.
+
+<ParamField path="goto" type="function">
+  Navigate to a URL with optional configuration.
+
+  **Parameters:**
+  - `url` (string | URL) - Where to navigate to
+  - `options` (object) - Navigation options
+
+  **Returns:** Promise\<void\> that resolves when navigation completes
+</ParamField>
+
+### Options
+
+<ParamField path="replaceState" type="boolean" default={false}>
+  If `true`, will replace the current history entry rather than creating a new one with `pushState`
+</ParamField>
+
+<ParamField path="noScroll" type="boolean" default={false}>
+  If `true`, the browser will maintain its scroll position rather than scrolling to the top
+</ParamField>
+
+<ParamField path="keepFocus" type="boolean" default={false}>
+  If `true`, the currently focused element will retain focus after navigation
+</ParamField>
+
+<ParamField path="invalidateAll" type="boolean" default={false}>
+  If `true`, all `load` functions of the page will be rerun
+</ParamField>
+
+<ParamField path="invalidate" type="Array<string | URL | ((url: URL) => boolean)>">
+  Causes load functions to re-run if they depend on one of the URLs
+</ParamField>
+
+<ParamField path="state" type="App.PageState">
+  An optional object that will be available as `page.state`
+</ParamField>
+
+### Usage
+
+```js
+import { goto } from '$app/navigation';
+
+// Basic navigation
+await goto('/about');
+
+// Replace current history entry
+await goto('/login', { replaceState: true });
+
+// Navigate without scrolling
+await goto('/section', { noScroll: true });
+
+// Navigate and invalidate all data
+await goto('/dashboard', { invalidateAll: true });
+
+// Navigate with state
+await goto('/page', { state: { modal: true } });
+```
+
+<Warning>
+  For external URLs, use `window.location = url` instead of `goto(url)`.
+</Warning>
+
+## invalidate
+
+Causes `load` functions to re-run if they depend on the URL.
+
+<ParamField path="invalidate" type="function">
+  Invalidate data dependencies.
+
+  **Parameters:**
+  - `resource` (string | URL | ((url: URL) => boolean)) - The URL or predicate to invalidate
+
+  **Returns:** Promise\<void\>
+</ParamField>
+
+```js
+import { invalidate } from '$app/navigation';
+
+// Invalidate a specific URL
+await invalidate('/api/user');
+
+// Invalidate using a custom identifier
+await invalidate('custom:state');
+
+// Invalidate based on a pattern
+await invalidate((url) => url.pathname === '/path');
+```
+
+## invalidateAll
+
+Causes all `load` and `query` functions belonging to the currently active page to re-run.
+
+<ParamField path="invalidateAll" type="function">
+  Invalidates all data on the current page.
+
+  **Returns:** Promise\<void\>
+</ParamField>
+
+```js
+import { invalidateAll } from '$app/navigation';
+
+await invalidateAll();
+```
+
+## refreshAll
+
+Causes all currently active remote functions to refresh, and all `load` functions to re-run.
+
+<ParamField path="refreshAll" type="function">
+  Refresh all remote functions and optionally load functions.
+
+  **Parameters:**
+  - `options` (object) - Configuration options
+
+  **Returns:** Promise\<void\>
+</ParamField>
+
+```js
+import { refreshAll } from '$app/navigation';
+
+// Refresh everything
+await refreshAll();
+
+// Refresh remote functions only
+await refreshAll({ includeLoadFunctions: false });
+```
+
+## preloadData
+
+Programmatically preloads a page's code and data.
+
+<ParamField path="preloadData" type="function">
+  Preload page data for instant navigation.
+
+  **Parameters:**
+  - `href` (string) - Page URL to preload
+
+  **Returns:** Promise with status and data or redirect location
+</ParamField>
+
+```js
+import { preloadData } from '$app/navigation';
+
+const result = await preloadData('/blog/article');
+
+if (result.type === 'loaded') {
+  console.log(result.status, result.data);
+} else if (result.type === 'redirect') {
+  console.log('Redirects to:', result.location);
+}
+```
+
+## preloadCode
+
+Programmatically imports the code for routes that haven't yet been fetched.
+
+<ParamField path="preloadCode" type="function">
+  Preload route code modules.
+
+  **Parameters:**
+  - `pathname` (string) - Route pathname to preload (e.g., `/about` or `/blog/*`)
+
+  **Returns:** Promise\<void\>
+</ParamField>
+
+```js
+import { preloadCode } from '$app/navigation';
+
+// Preload a specific route
+await preloadCode('/about');
+
+// Preload all blog routes
+await preloadCode('/blog/*');
+```
+
+## beforeNavigate
+
+A navigation interceptor that triggers before navigation starts.
+
+<ParamField path="beforeNavigate" type="function">
+  Register a callback that runs before navigation.
+
+  **Parameters:**
+  - `callback` (function) - Called with navigation details
+
+  **Returns:** void
+</ParamField>
+
+```svelte
+<script>
+  import { beforeNavigate } from '$app/navigation';
+
+  beforeNavigate(({ from, to, cancel, type, willUnload }) => {
+    // Confirm before leaving if form is dirty
+    if (formIsDirty && !confirm('Discard changes?')) {
+      cancel();
+    }
+  });
+</script>
+```
+
+### Callback Parameters
+
+<ResponseField name="from" type="object | null">
+  Information about the current page (url, route, params)
+</ResponseField>
+
+<ResponseField name="to" type="object | null">
+  Information about the destination page
+</ResponseField>
+
+<ResponseField name="type" type="string">
+  Navigation type: `'enter'`, `'leave'`, `'link'`, `'goto'`, or `'popstate'`
+</ResponseField>
+
+<ResponseField name="willUnload" type="boolean">
+  Whether the navigation will cause document unload
+</ResponseField>
+
+<ResponseField name="cancel" type="function">
+  Call to prevent navigation (may show browser confirmation for `'leave'` type)
+</ResponseField>
+
+<ResponseField name="delta" type="number | undefined">
+  Number of entries to go back/forward (only for `'popstate'` type)
+</ResponseField>
+
+## afterNavigate
+
+A lifecycle function that runs after navigation completes.
+
+<ParamField path="afterNavigate" type="function">
+  Register a callback that runs after navigation.
+
+  **Parameters:**
+  - `callback` (function) - Called with navigation details
+
+  **Returns:** void
+</ParamField>
+
+```svelte
+<script>
+  import { afterNavigate } from '$app/navigation';
+
+  afterNavigate(({ from, to, type }) => {
+    console.log(`Navigated from ${from?.url} to ${to.url}`);
+    // Send analytics event
+  });
+</script>
+```
+
+## onNavigate
+
+A lifecycle function for handling view transitions and post-navigation cleanup.
+
+<ParamField path="onNavigate" type="function">
+  Register a callback that runs during navigation.
+
+  **Parameters:**
+  - `callback` (function) - Called before DOM updates
+
+  **Returns:** void
+</ParamField>
+
+```svelte
+<script>
+  import { onNavigate } from '$app/navigation';
+
+  onNavigate((navigation) => {
+    if (!document.startViewTransition) return;
+
+    return new Promise((resolve) => {
+      document.startViewTransition(async () => {
+        resolve();
+        await navigation.complete;
+      });
+    });
+  });
+</script>
+```
+
+## disableScrollHandling
+
+Disables SvelteKit's built-in scroll handling.
+
+<ParamField path="disableScrollHandling" type="function">
+  Disable automatic scroll handling for current navigation.
+
+  **Returns:** void
+</ParamField>
+
+```svelte
+<script>
+  import { onMount } from 'svelte';
+  import { disableScrollHandling } from '$app/navigation';
+
+  onMount(() => {
+    disableScrollHandling();
+    // Custom scroll behavior
+  });
+</script>
+```
+
+<Warning>
+  Must be called during navigation (in `onMount`, `afterNavigate`, or an action).
+</Warning>
+
+## pushState
+
+Programmatically create a new history entry with state.
+
+<ParamField path="pushState" type="function">
+  Push a new history state.
+
+  **Parameters:**
+  - `url` (string | URL) - The URL (use `''` for current URL)
+  - `state` (App.PageState) - State object to store
+
+  **Returns:** void
+</ParamField>
+
+```js
+import { pushState } from '$app/navigation';
+
+// Push state with current URL
+pushState('', { modal: true });
+
+// Push state with new URL
+pushState('/search?q=hello', { query: 'hello' });
+```
+
+## replaceState
+
+Programmatically replace the current history entry with state.
+
+<ParamField path="replaceState" type="function">
+  Replace the current history state.
+
+  **Parameters:**
+  - `url` (string | URL) - The URL (use `''` for current URL)
+  - `state` (App.PageState) - State object to store
+
+  **Returns:** void
+</ParamField>
+
+```js
+import { replaceState } from '$app/navigation';
+
+replaceState('', { scrollY: window.scrollY });
+```
+
+<Info>
+  Use `pushState` and `replaceState` for [shallow routing](https://svelte.dev/docs/kit/shallow-routing) to update state without full navigation.
+</Info>

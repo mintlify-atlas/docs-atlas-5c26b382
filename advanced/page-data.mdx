@@ -1,0 +1,336 @@
+---
+title: Understanding page data
+description: Learn how data flows through layouts and pages in SvelteKit
+---
+
+Before a page component can be rendered, SvelteKit needs to get data. This guide explains how data flows through your application.
+
+## Page data
+
+A `+page.svelte` file can have a sibling `+page.js` that exports a `load` function:
+
+```javascript src/routes/blog/[slug]/+page.js
+export function load({ params }) {
+	return {
+		post: {
+			title: `Title for ${params.slug} goes here`,
+			content: `Content for ${params.slug} goes here`
+		}
+	};
+}
+```
+
+```svelte src/routes/blog/[slug]/+page.svelte
+<script>
+	let { data } = $props();
+</script>
+
+<h1>{data.post.title}</h1>
+<div>{@html data.post.content}</div>
+```
+
+<Note>
+  The return value of a `load` function is available to the page via the `data` prop.
+</Note>
+
+## Layout data
+
+Layout `load` functions work the same way:
+
+<Steps>
+  <Step title="Define layout load">
+    Create a `+layout.server.js` file that returns data
+    
+    ```javascript src/routes/blog/[slug]/+layout.server.js
+    import * as db from '$lib/server/database';
+    
+    export async function load() {
+      return {
+        posts: await db.getPostSummaries()
+      };
+    }
+    ```
+  </Step>
+  
+  <Step title="Access in layout">
+    Use the data in `+layout.svelte`
+    
+    ```svelte src/routes/blog/[slug]/+layout.svelte
+    <script>
+      let { data, children } = $props();
+    </script>
+    
+    <main>
+      {@render children()}
+    </main>
+    
+    <aside>
+      <h2>More posts</h2>
+      <ul>
+        {#each data.posts as post}
+          <li><a href="/blog/{post.slug}">{post.title}</a></li>
+        {/each}
+      </ul>
+    </aside>
+    ```
+  </Step>
+  
+  <Step title="Access in child pages">
+    Data from parent layouts is available to all child pages
+    
+    ```svelte src/routes/blog/[slug]/+page.svelte
+    <script>
+      import { page } from '$app/state';
+      
+      let { data } = $props();
+      
+      // Access parent layout data
+      let index = $derived(data.posts.findIndex(post => post.slug === page.params.slug));
+      let next = $derived(data.posts[index + 1]);
+    </script>
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  If multiple `load` functions return data with the same key, the last one wins. A page `load` will override a layout `load` for the same key.
+</Warning>
+
+## page.data
+
+The `page` store provides access to all data for the current page:
+
+```svelte src/routes/+layout.svelte
+<script>
+	import { page } from '$app/state';
+</script>
+
+<svelte:head>
+	<title>{page.data.title}</title>
+</svelte:head>
+```
+
+<Tip>
+  Use `page.data` when a parent layout needs to access data from a child page or layout.
+</Tip>
+
+## Universal vs server load
+
+There are two types of `load` functions:
+
+<CardGroup cols={2}>
+  <Card title="Universal load" icon="globe">
+    - Files: `+page.js`, `+layout.js`
+    - Runs on both server and client
+    - Can return any value including classes
+    - Reruns in browser during hydration
+  </Card>
+  
+  <Card title="Server load" icon="server">
+    - Files: `+page.server.js`, `+layout.server.js`
+    - Only runs on the server
+    - Must return serializable data
+    - Access to cookies, databases, secrets
+  </Card>
+</CardGroup>
+
+### When each runs
+
+<Accordion title="Server load functions">
+  Always run on the server, both during SSR and when fetching data for client-side navigation.
+</Accordion>
+
+<Accordion title="Universal load functions">
+  - Run on the server during SSR
+  - Run again during hydration
+  - Run in the browser for subsequent navigations
+  - Can be disabled via `export const ssr = false`
+</Accordion>
+
+### Combining both
+
+When you have both, the server `load` runs first and its output is passed to the universal `load`:
+
+<CodeGroup>
+```javascript +page.server.js
+export async function load() {
+	return {
+		serverMessage: 'hello from server load function'
+	};
+}
+```
+
+```javascript +page.js
+export async function load({ data }) {
+	return {
+		serverMessage: data.serverMessage,
+		universalMessage: 'hello from universal load function'
+	};
+}
+```
+</CodeGroup>
+
+## URL data
+
+Load functions have access to URL information:
+
+<ResponseField name="url" type="URL">
+  Contains `origin`, `hostname`, `pathname`, and `searchParams`
+  
+  ```javascript
+  export function load({ url }) {
+    const query = url.searchParams.get('q');
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="route" type="object">
+  Contains the route ID
+  
+  ```javascript
+  export function load({ route }) {
+    console.log(route.id); // '/a/[b]/[...c]'
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="params" type="object">
+  Derived from `url.pathname` and `route.id`
+  
+  ```javascript
+  export function load({ params }) {
+    // For route /a/[b]/[...c] and URL /a/x/y/z
+    console.log(params.b);  // 'x'
+    console.log(params.c);  // 'y/z'
+  }
+  ```
+</ResponseField>
+
+## Making fetch requests
+
+Use the provided `fetch` function in `load`:
+
+```javascript
+export async function load({ fetch, params }) {
+	const res = await fetch(`/api/items/${params.id}`);
+	const item = await res.json();
+
+	return { item };
+}
+```
+
+<Tip>
+  The `fetch` in `load` has special powers:
+  - Inherits cookies and authorization headers
+  - Makes relative requests on the server
+  - Inlines responses into HTML during SSR
+  - Reads from HTML during hydration
+</Tip>
+
+## Parent data
+
+Access data from parent `load` functions with `await parent()`:
+
+<CodeGroup>
+```javascript +layout.js
+export function load() {
+	return { a: 1 };
+}
+```
+
+```javascript abc/+layout.js
+export async function load({ parent }) {
+	const { a } = await parent();
+	return { b: a + 1 };
+}
+```
+
+```javascript abc/+page.js
+export async function load({ parent }) {
+	const { a, b } = await parent();
+	return { c: a + b };
+}
+```
+</CodeGroup>
+
+<Warning>
+  Be careful not to create waterfalls. Call `parent()` after independent operations:
+  
+  ```javascript
+  export async function load({ params, parent }) {
+    // Good: fetch data first
+    const data = await getData(params);
+    const parentData = await parent();
+    
+    return { ...data, meta: { ...parentData.meta, ...data.meta } };
+  }
+  ```
+</Warning>
+
+## When load reruns
+
+SvelteKit tracks dependencies to avoid unnecessary reruns:
+
+<AccordionGroup>
+  <Accordion title="Referenced params change">
+    If your `load` uses `params.slug`, it reruns when `slug` changes.
+  </Accordion>
+  
+  <Accordion title="Referenced URL properties change">
+    If your `load` uses `url.pathname` or `url.search`, it reruns when those change.
+  </Accordion>
+  
+  <Accordion title="Search params accessed">
+    Calling `url.searchParams.get('x')` makes it rerun when `x` changes.
+  </Accordion>
+  
+  <Accordion title="Parent reruns">
+    If a parent `load` reruns and this `load` calls `await parent()`.
+  </Accordion>
+  
+  <Accordion title="Manual invalidation">
+    Via `invalidate(url)`, `invalidateAll()`, or `depends()`.
+  </Accordion>
+</AccordionGroup>
+
+## Streaming with promises
+
+Return unresolved promises from server `load` to stream data:
+
+```javascript
+export async function load({ params }) {
+	return {
+		// Comments stream in later
+		comments: loadComments(params.slug),
+		// Post loads immediately
+		post: await loadPost(params.slug)
+	};
+}
+```
+
+```svelte
+<script>
+	let { data } = $props();
+</script>
+
+<h1>{data.post.title}</h1>
+<div>{@html data.post.content}</div>
+
+{#await data.comments}
+	Loading comments...
+{:then comments}
+	{#each comments as comment}
+		<p>{comment.content}</p>
+	{/each}
+{:catch error}
+	<p>Error loading comments: {error.message}</p>
+{/await}
+```
+
+<Note>
+  Streaming only works when JavaScript is enabled and on platforms that support streaming responses.
+</Note>
+
+<Card title="Learn more" icon="book" href="https://svelte.dev/tutorial/kit/page-data">
+  Follow the interactive tutorial on loading data
+</Card>

@@ -1,0 +1,317 @@
+---
+title: Error handling
+description: Handle expected and unexpected errors in SvelteKit applications
+---
+
+Errors are inevitable in software development. SvelteKit handles errors differently depending on where they occur and what kind they are.
+
+## Error objects
+
+SvelteKit distinguishes between expected and unexpected errors, both represented as simple `{ message: string }` objects by default.
+
+<Tip>
+  You can add additional properties like `code` or tracking `id` by customizing the `App.Error` type.
+</Tip>
+
+## Expected errors
+
+An expected error is created with the `error` helper from `@sveltejs/kit`:
+
+```javascript src/routes/blog/[slug]/+page.server.js
+import { error } from '@sveltejs/kit';
+import * as db from '$lib/server/database';
+
+export async function load({ params }) {
+	const post = await db.getPost(params.slug);
+
+	if (!post) {
+		error(404, {
+			message: 'Not found'
+		});
+	}
+
+	return { post };
+}
+```
+
+This causes SvelteKit to:
+
+<Steps>
+  <Step title="Set the response status">
+    Sets the HTTP status code to 404
+  </Step>
+  
+  <Step title="Render error page">
+    Renders the nearest `+error.svelte` component
+  </Step>
+  
+  <Step title="Pass error object">
+    Makes the error object available as `page.error`
+  </Step>
+</Steps>
+
+### Displaying errors
+
+```svelte src/routes/+error.svelte
+<script>
+	import { page } from '$app/state';
+</script>
+
+<h1>{page.error.message}</h1>
+```
+
+### Adding custom properties
+
+<CodeGroup>
+```typescript src/app.d.ts
+declare global {
+	namespace App {
+		interface Error {
+			message: string;
+			code: string;
+		}
+	}
+}
+
+export {};
+```
+
+```javascript src/routes/+page.server.js
+import { error } from '@sveltejs/kit';
+
+error(404, {
+	message: 'Not found',
+	code: 'NOT_FOUND'
+});
+```
+</CodeGroup>
+
+### Shorthand syntax
+
+For convenience, pass a string as the second argument:
+
+```javascript
+error(404, 'Not found');
+```
+
+## Unexpected errors
+
+An unexpected error is any other exception that occurs while handling a request. These can contain sensitive information, so messages and stack traces are not exposed to users.
+
+<Warning>
+  By default, unexpected errors are printed to the console but show a generic message to users:
+  
+  ```json
+  { "message": "Internal Error" }
+  ```
+</Warning>
+
+### handleError hook
+
+Unexpected errors go through the `handleError` hook, where you can:
+
+<AccordionGroup>
+  <Accordion title="Log errors to a service">
+    ```javascript src/hooks.server.js
+    import * as Sentry from '@sentry/sveltekit';
+    
+    Sentry.init({/*...*/})
+    
+    export async function handleError({ error, event, status, message }) {
+      const errorId = crypto.randomUUID();
+      
+      Sentry.captureException(error, {
+        extra: { event, errorId, status }
+      });
+      
+      return {
+        message: 'Whoops!',
+        errorId
+      };
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Return custom error objects">
+    ```javascript src/hooks.server.js
+    export async function handleError({ error, event, status, message }) {
+      // Extract safe information
+      const errorId = crypto.randomUUID();
+      
+      return {
+        message: 'An error occurred',
+        errorId,
+        timestamp: new Date().toISOString()
+      };
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Handle client errors">
+    ```javascript src/hooks.client.js
+    export async function handleError({ error, event, status, message }) {
+      console.error('Client error:', error);
+      
+      return {
+        message: 'Something went wrong',
+        code: 'CLIENT_ERROR'
+      };
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Note>
+  Make sure that `handleError` never throws an error itself.
+</Note>
+
+## Error responses
+
+How SvelteKit responds to errors depends on where they occur:
+
+### In handle or +server.js
+
+SvelteKit responds with either:
+- **Fallback error page** (if `Accept` header expects HTML)
+- **JSON representation** (if `Accept` header is `application/json`)
+
+### Custom fallback page
+
+Create `src/error.html` to customize the fallback error page:
+
+```html src/error.html
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<title>%sveltekit.error.message%</title>
+	</head>
+	<body>
+		<h1>My custom error page</h1>
+		<p>Status: %sveltekit.status%</p>
+		<p>Message: %sveltekit.error.message%</p>
+	</body>
+</html>
+```
+
+SvelteKit replaces these placeholders:
+- `%sveltekit.status%` → HTTP status code
+- `%sveltekit.error.message%` → Error message
+
+### In load functions
+
+If an error occurs inside a `load` function, SvelteKit renders the nearest `+error.svelte` component.
+
+<Accordion title="Error boundary rules">
+  - Errors in `+page.server.js` or `+page.js` render the nearest sibling `+error.svelte`
+  - Errors in `+layout.server.js` or `+layout.js` render the nearest parent `+error.svelte` (not the sibling)
+  - Errors in root `+layout.js` or `+layout.server.js` use the fallback error page
+</Accordion>
+
+## Type safety
+
+Customize the shape of errors with TypeScript:
+
+```typescript src/app.d.ts
+declare global {
+	namespace App {
+		interface Error {
+			code: string;
+			id: string;
+		}
+	}
+}
+
+export {};
+```
+
+<Note>
+  The `App.Error` interface always includes a `message: string` property.
+</Note>
+
+## Error helper reference
+
+From `@sveltejs/kit`:
+
+<ResponseField name="error" type="function">
+  Throws an HTTP error with a status code and message
+  
+  ```javascript
+  import { error } from '@sveltejs/kit';
+  
+  error(404, 'Not found');
+  error(403, { message: 'Forbidden', code: 'ACCESS_DENIED' });
+  ```
+</ResponseField>
+
+<ResponseField name="isHttpError" type="function">
+  Checks if an error was thrown by the `error` helper
+  
+  ```javascript
+  import { isHttpError } from '@sveltejs/kit';
+  
+  try {
+    // ...
+  } catch (e) {
+    if (isHttpError(e, 404)) {
+      // Handle 404 specifically
+    }
+  }
+  ```
+</ResponseField>
+
+## Common patterns
+
+<CodeGroup>
+```javascript Authentication check
+import { error } from '@sveltejs/kit';
+
+export async function load({ locals }) {
+	if (!locals.user) {
+		error(401, 'Not logged in');
+	}
+	
+	if (!locals.user.isAdmin) {
+		error(403, 'Not an admin');
+	}
+}
+```
+
+```javascript Resource validation
+import { error } from '@sveltejs/kit';
+import * as db from '$lib/server/database';
+
+export async function load({ params }) {
+	const item = await db.getItem(params.id);
+	
+	if (!item) {
+		error(404, {
+			message: 'Item not found',
+			code: 'ITEM_NOT_FOUND'
+		});
+	}
+	
+	return { item };
+}
+```
+
+```javascript Error with tracking
+import { error } from '@sveltejs/kit';
+
+export async function load() {
+	const errorId = crypto.randomUUID();
+	
+	// Log to monitoring service
+	await logError(errorId, 'Invalid request');
+	
+	error(400, {
+		message: 'Invalid request',
+		errorId
+	});
+}
+```
+</CodeGroup>
+
+<Card title="Learn more" icon="book" href="https://svelte.dev/tutorial/kit/error-basics">
+  Follow the interactive tutorial on errors and redirects
+</Card>

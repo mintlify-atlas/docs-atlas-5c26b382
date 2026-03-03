@@ -1,0 +1,329 @@
+---
+title: Page options
+description: Configure how SvelteKit renders and prerenders your pages
+---
+
+By default, SvelteKit will render any component first on the server and send it to the client as HTML. It will then render the component again in the browser to make it interactive in a process called **hydration**.
+
+You can control each of these on a page-by-page basis by exporting options from `+page.js`, `+page.server.js`, `+layout.js`, or `+layout.server.js`.
+
+<Note>
+Child layouts and pages override values set in parent layouts, allowing you to configure different behaviors for different parts of your app.
+</Note>
+
+## prerender
+
+It's likely that at least some routes of your app can be represented as a simple HTML file generated at build time. These routes can be **prerendered**.
+
+```js
+/// file: +page.js/+page.server.js/+server.js
+export const prerender = true;
+```
+
+### Prerendering everything
+
+You can set `export const prerender = true` in your root `+layout.js` or `+layout.server.js` and prerender everything except pages that are explicitly marked as not prerenderable:
+
+```js
+/// file: +page.js/+page.server.js/+server.js
+export const prerender = false;
+```
+
+### Auto mode
+
+Routes with `prerender = true` will be excluded from manifests used for dynamic SSR. In some cases you might want to prerender a route but also include it in the manifest:
+
+```js
+/// file: +page.js/+page.server.js/+server.js
+export const prerender = 'auto';
+```
+
+<Tip>
+If your entire app is suitable for prerendering, you can use `adapter-static`, which will output files suitable for use with any static webserver.
+</Tip>
+
+### How prerendering works
+
+The prerenderer will start at the root of your app and generate files for any prerenderable pages or `+server.js` routes it finds:
+
+<Steps>
+<Step title="Entry points">
+The prerenderer starts from configured entry points and crawls `<a>` elements
+</Step>
+
+<Step title="Discovery">
+Each page is scanned for links to other prerenderable pages
+</Step>
+
+<Step title="Generation">
+HTML files are generated for all discovered prerenderable routes
+</Step>
+</Steps>
+
+<Note>
+You can specify which pages should be accessed by the prerenderer using `config.kit.prerender.entries`, or by exporting an `entries` function from a dynamic route.
+</Note>
+
+### When not to prerender
+
+The basic rule is: **for a page to be prerenderable, any two users hitting it directly must get the same content from the server**.
+
+<Warning>
+Not all pages are suitable for prerendering. Any content that is prerendered will be seen by all users. You can fetch personalized data in `onMount` in a prerendered page, but this may result in a poorer user experience.
+</Warning>
+
+Pages that cannot be prerendered:
+
+<AccordionGroup>
+<Accordion title="Pages with actions">
+Pages with form actions cannot be prerendered, because a server must be able to handle the action `POST` requests.
+</Accordion>
+
+<Accordion title="Pages using url.searchParams">
+Accessing `url.searchParams` during prerendering is forbidden. If you need to use it, ensure you are only doing so in the browser (for example in `onMount`).
+</Accordion>
+</AccordionGroup>
+
+### Route conflicts
+
+Because prerendering writes to the filesystem, it isn't possible to have two endpoints that would cause a directory and a file to have the same name:
+
+<CodeGroup>
+```plaintext Conflict
+src/routes/foo/+server.js        → foo (file)
+src/routes/foo/bar/+server.js    → foo/bar (needs foo to be a directory)
+```
+
+```plaintext Solution
+src/routes/foo.json/+server.js      → foo.json (file)
+src/routes/foo/bar.json/+server.js  → foo/bar.json (works!)
+```
+</CodeGroup>
+
+<Tip>
+It's recommended that you always include a file extension to avoid conflicts. For pages, SvelteKit writes `foo/index.html` instead of `foo`.
+</Tip>
+
+## entries
+
+SvelteKit will discover pages to prerender automatically by starting at entry points and crawling them. By default, all your non-dynamic routes are considered entry points:
+
+```plaintext
+/             # non-dynamic
+/blog         # non-dynamic
+/blog/[slug]  # dynamic, needs manual entry
+```
+
+You can specify entries for dynamic routes by exporting an `entries` function:
+
+```js
+/// file: src/routes/blog/[slug]/+page.server.js
+/** @type {import('./$types').EntryGenerator} */
+export function entries() {
+	return [
+		{ slug: 'hello-world' },
+		{ slug: 'another-blog-post' }
+	];
+}
+
+export const prerender = true;
+```
+
+<Note>
+`entries` can be an `async` function, allowing you to retrieve a list of posts from a CMS or database.
+</Note>
+
+## ssr
+
+Normally, SvelteKit renders your page on the server before sending that HTML to the client where it's hydrated.
+
+If you set `ssr` to `false`, it renders an empty 'shell' page instead:
+
+```js
+/// file: +page.js
+export const ssr = false;
+```
+
+<Warning>
+This is useful if your page is unable to be rendered on the server (because you use browser-only globals like `document`), but in most situations it's not recommended. See the appendix on SSR for more information.
+</Warning>
+
+<Accordion title="Turning your app into an SPA">
+If you add `export const ssr = false` to your root `+layout.js`, your entire app will only be rendered on the client — which essentially means you turn your app into an SPA.
+
+**You should not do this if your goal is to build a statically generated site.**
+</Accordion>
+
+## csr
+
+Ordinarily, SvelteKit hydrates your server-rendered HTML into an interactive client-side-rendered page. Some pages don't require JavaScript at all:
+
+```js
+/// file: +page.js
+export const csr = false;
+```
+
+Disabling CSR means:
+
+<CardGroup cols={2}>
+<Card title="No JavaScript" icon="ban">
+The webpage works with HTML and CSS only
+</Card>
+
+<Card title="No scripts" icon="code">
+`<script>` tags inside components are removed
+</Card>
+
+<Card title="No progressive enhancement" icon="circle-xmark">
+`<form>` elements cannot be progressively enhanced
+</Card>
+
+<Card title="Browser navigation" icon="arrow-pointer">
+Links are handled by the browser with full-page navigation
+</Card>
+</CardGroup>
+
+<Tip>
+You can enable `csr` during development (for HMR) like so:
+
+```js
+import { dev } from '$app/environment';
+
+export const csr = dev;
+```
+</Tip>
+
+## trailingSlash
+
+By default, SvelteKit will remove trailing slashes from URLs — if you visit `/about/`, it will respond with a redirect to `/about`.
+
+You can change this behavior with the `trailingSlash` option:
+
+<Tabs>
+<Tab title="never (default)">
+```js
+/// file: src/routes/+layout.js
+export const trailingSlash = 'never';
+```
+`/about/` redirects to `/about`
+</Tab>
+
+<Tab title="always">
+```js
+/// file: src/routes/+layout.js
+export const trailingSlash = 'always';
+```
+`/about` redirects to `/about/`
+</Tab>
+
+<Tab title="ignore">
+```js
+/// file: src/routes/+layout.js
+export const trailingSlash = 'ignore';
+```
+No redirects, both work
+</Tab>
+</Tabs>
+
+<Warning>
+Ignoring trailing slashes is not recommended — the semantics of relative paths differ between the two cases, and `/x` and `/x/` are treated as separate URLs which is harmful to SEO.
+</Warning>
+
+This option also affects prerendering:
+
+<CodeGroup>
+```plaintext trailingSlash: 'always'
+/about → about/index.html
+```
+
+```plaintext trailingSlash: 'never'
+/about → about.html
+```
+</CodeGroup>
+
+## config
+
+With the concept of adapters, SvelteKit is able to run on a variety of platforms. Each of these might have specific configuration:
+
+```js
+/// file: src/routes/+page.js
+/** @type {import('some-adapter').Config} */
+export const config = {
+	runtime: 'edge'
+};
+```
+
+`config` objects are merged at the top level (but not deeper levels):
+
+<Steps>
+<Step title="Layout config">
+```js
+/// file: src/routes/+layout.js
+export const config = {
+	runtime: 'edge',
+	regions: 'all',
+	foo: {
+		bar: true
+	}
+}
+```
+</Step>
+
+<Step title="Page config">
+```js
+/// file: src/routes/+page.js
+export const config = {
+	regions: ['us1', 'us2'],
+	foo: {
+		baz: true
+	}
+}
+```
+</Step>
+
+<Step title="Resulting config">
+```js
+{
+	runtime: 'edge',
+	regions: ['us1', 'us2'],
+	foo: { baz: true }  // Note: bar is not preserved
+}
+```
+</Step>
+</Steps>
+
+<Note>
+Consult the documentation of your adapter for specific configuration options and type definitions.
+</Note>
+
+## Controlling page behavior
+
+You can mix and match these options in different areas of your app:
+
+<CardGroup cols={3}>
+<Card title="Marketing pages" icon="rocket">
+Prerender for maximum speed
+</Card>
+
+<Card title="Dynamic pages" icon="server">
+Server-render for SEO and accessibility
+</Card>
+
+<Card title="Admin section" icon="user-shield">
+Client-only rendering for SPA behavior
+</Card>
+</CardGroup>
+
+This versatility makes SvelteKit suitable for a wide range of applications.
+
+## Next steps
+
+<CardGroup cols={2}>
+<Card title="State management" icon="database" href="/core-concepts/state-management">
+Learn how to manage state in SvelteKit
+</Card>
+
+<Card title="Remote functions" icon="server" href="/core-concepts/remote-functions">
+Type-safe communication between client and server
+</Card>
+</CardGroup>

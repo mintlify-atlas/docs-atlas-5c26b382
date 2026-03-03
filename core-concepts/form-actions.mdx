@@ -1,0 +1,489 @@
+---
+title: Form actions
+description: Handle form submissions with progressive enhancement in SvelteKit
+---
+
+A `+page.server.js` file can export **actions**, which allow you to `POST` data to the server using the `<form>` element.
+
+When using `<form>`, client-side JavaScript is optional, but you can easily **progressively enhance** your form interactions with JavaScript to provide the best user experience.
+
+## Default actions
+
+In the simplest case, a page declares a `default` action:
+
+<CodeGroup>
+```js Server action
+/// file: src/routes/login/+page.server.js
+/** @satisfies {import('./$types').Actions} */
+export const actions = {
+	default: async (event) => {
+		// TODO log the user in
+	}
+};
+```
+
+```svelte Form component
+<!--- file: src/routes/login/+page.svelte --->
+<form method="POST">
+	<label>
+		Email
+		<input name="email" type="email">
+	</label>
+	<label>
+		Password
+		<input name="password" type="password">
+	</label>
+	<button>Log in</button>
+</form>
+```
+</CodeGroup>
+
+<Note>
+Actions always use `POST` requests, since `GET` requests should never have side-effects.
+</Note>
+
+### Invoking from other pages
+
+You can invoke the action from other pages by adding the `action` attribute:
+
+```html
+/// file: src/routes/+layout.svelte
+<form method="POST" action="/login">
+	<!-- content -->
+</form>
+```
+
+## Named actions
+
+Instead of one `default` action, a page can have multiple named actions:
+
+```js
+/// file: src/routes/login/+page.server.js
+/** @satisfies {import('./$types').Actions} */
+export const actions = {
+	login: async (event) => {
+		// TODO log the user in
+	},
+	register: async (event) => {
+		// TODO register the user
+	}
+};
+```
+
+To invoke a named action, add a query parameter with the name prefixed by a `/` character:
+
+<Tabs>
+<Tab title="Same page">
+```svelte
+<!--- file: src/routes/login/+page.svelte --->
+<form method="POST" action="?/register">
+```
+</Tab>
+
+<Tab title="Different page">
+```svelte
+<!--- file: src/routes/+layout.svelte --->
+<form method="POST" action="/login?/register">
+```
+</Tab>
+</Tabs>
+
+### Using formaction
+
+You can use the `formaction` attribute on a button to `POST` to a different action:
+
+```svelte
+/// file: src/routes/login/+page.svelte
+<form method="POST" action="?/login">
+	<label>
+		Email
+		<input name="email" type="email">
+	</label>
+	<label>
+		Password
+		<input name="password" type="password">
+	</label>
+	<button>Log in</button>
+	<button formaction="?/register">Register</button>
+</form>
+```
+
+## Anatomy of an action
+
+Each action receives a `RequestEvent` object, allowing you to read the data with `request.formData()`:
+
+```js
+/// file: src/routes/login/+page.server.js
+import * as db from '$lib/server/db';
+
+/** @type {import('./$types').PageServerLoad} */
+export async function load({ cookies }) {
+	const user = await db.getUserFromSession(cookies.get('sessionid'));
+	return { user };
+}
+
+/** @satisfies {import('./$types').Actions} */
+export const actions = {
+	login: async ({ cookies, request }) => {
+		const data = await request.formData();
+		const email = data.get('email');
+		const password = data.get('password');
+
+		const user = await db.getUser(email);
+		cookies.set('sessionid', await db.createSession(user), { path: '/' });
+
+		return { success: true };
+	},
+	register: async (event) => {
+		// TODO register the user
+	}
+};
+```
+
+The returned data is available through the `form` property:
+
+```svelte
+<!--- file: src/routes/login/+page.svelte --->
+<script>
+	/** @type {import('./$types').PageProps} */
+	let { data, form } = $props();
+</script>
+
+{#if form?.success}
+	<p>Successfully logged in! Welcome back, {data.user.name}</p>
+{/if}
+```
+
+## Validation errors
+
+If the request couldn't be processed because of invalid data, return validation errors using the `fail` function:
+
+```js
+/// file: src/routes/login/+page.server.js
+import { fail } from '@sveltejs/kit';
+import * as db from '$lib/server/db';
+
+/** @satisfies {import('./$types').Actions} */
+export const actions = {
+	login: async ({ cookies, request }) => {
+		const data = await request.formData();
+		const email = data.get('email');
+		const password = data.get('password');
+
+		if (!email) {
+			return fail(400, { email, missing: true });
+		}
+
+		const user = await db.getUser(email);
+
+		if (!user || user.password !== db.hash(password)) {
+			return fail(400, { email, incorrect: true });
+		}
+
+		cookies.set('sessionid', await db.createSession(user), { path: '/' });
+
+		return { success: true };
+	}
+};
+```
+
+Display validation errors in your component:
+
+```svelte
+/// file: src/routes/login/+page.svelte
+<form method="POST" action="?/login">
+	{#if form?.missing}<p class="error">The email field is required</p>{/if}
+	{#if form?.incorrect}<p class="error">Invalid credentials!</p>{/if}
+	<label>
+		Email
+		<input name="email" type="email" value={form?.email ?? ''}>
+	</label>
+	<label>
+		Password
+		<input name="password" type="password">
+	</label>
+	<button>Log in</button>
+</form>
+```
+
+<Note>
+As a precaution, we only return the email back to the page — not the password.
+</Note>
+
+## Redirects
+
+Redirects work exactly the same as in `load` functions:
+
+```js
+/// file: src/routes/login/+page.server.js
+import { fail, redirect } from '@sveltejs/kit';
+import * as db from '$lib/server/db';
+
+/** @satisfies {import('./$types').Actions} */
+export const actions = {
+	login: async ({ cookies, request, url }) => {
+		const data = await request.formData();
+		const email = data.get('email');
+		const password = data.get('password');
+
+		const user = await db.getUser(email);
+		if (!user) {
+			return fail(400, { email, missing: true });
+		}
+
+		if (user.password !== db.hash(password)) {
+			return fail(400, { email, incorrect: true });
+		}
+
+		cookies.set('sessionid', await db.createSession(user), { path: '/' });
+
+		if (url.searchParams.has('redirectTo')) {
+			redirect(303, url.searchParams.get('redirectTo'));
+		}
+
+		return { success: true };
+	}
+};
+```
+
+## Loading data
+
+After an action runs, the page will be re-rendered (unless a redirect or an unexpected error occurs):
+
+<Steps>
+<Step title="Action completes">
+The action's return value is available as the `form` prop
+</Step>
+
+<Step title="Load functions rerun">
+Your page's `load` functions will run after the action completes
+</Step>
+
+<Step title="Page updates">
+The page is re-rendered with the new data
+</Step>
+</Steps>
+
+<Warning>
+Note that `handle` runs before the action is invoked, and does not rerun before the `load` functions. If you use `handle` to populate `event.locals`, you must update it in the action.
+</Warning>
+
+## Progressive enhancement
+
+The forms we've built work without client-side JavaScript. When JavaScript is available, we can progressively enhance the user experience.
+
+### use:enhance
+
+The easiest way to progressively enhance a form is to add the `use:enhance` action:
+
+```svelte
+/// file: src/routes/login/+page.svelte
+<script>
+	import { enhance } from '$app/forms';
+
+	/** @type {import('./$types').PageProps} */
+	let { form } = $props();
+</script>
+
+<form method="POST" use:enhance>
+```
+
+<Note>
+`use:enhance` can only be used with forms that have `method="POST"` and point to actions defined in a `+page.server.js` file.
+</Note>
+
+Without an argument, `use:enhance` will emulate the browser-native behavior, but without full-page reloads:
+
+<AccordionGroup>
+<Accordion title="Update form property">
+Updates the `form` property and `page.form` on a successful or invalid response (if the action is on the same page)
+</Accordion>
+
+<Accordion title="Reset form">
+Resets the `<form>` element after successful submission
+</Accordion>
+
+<Accordion title="Invalidate data">
+Invalidates all data using `invalidateAll` on a successful response
+</Accordion>
+
+<Accordion title="Handle redirects">
+Calls `goto` on a redirect response
+</Accordion>
+
+<Accordion title="Show errors">
+Renders the nearest `+error` boundary if an error occurs
+</Accordion>
+
+<Accordion title="Reset focus">
+Resets focus to the appropriate element
+</Accordion>
+</AccordionGroup>
+
+### Customizing use:enhance
+
+To customize the behavior, provide a `SubmitFunction`:
+
+```svelte
+<form
+	method="POST"
+	use:enhance={({ formElement, formData, action, cancel, submitter }) => {
+		// `formElement` is this `<form>` element
+		// `formData` is its `FormData` object that's about to be submitted
+		// `action` is the URL to which the form is posted
+		// calling `cancel()` will prevent the submission
+		// `submitter` is the `HTMLElement` that caused the form to be submitted
+
+		return async ({ result, update }) => {
+			// `result` is an `ActionResult` object
+			// `update` triggers the default logic
+		};
+	}}
+>
+```
+
+### Using applyAction
+
+To get the default behavior back after customization, use `applyAction`:
+
+```svelte
+/// file: src/routes/login/+page.svelte
+<script>
+	import { enhance, applyAction } from '$app/forms';
+
+	/** @type {import('./$types').PageProps} */
+	let { form } = $props();
+</script>
+
+<form
+	method="POST"
+	use:enhance={({ formElement, formData, action, cancel }) => {
+		return async ({ result }) => {
+			if (result.type === 'redirect') {
+				goto(result.location);
+			} else {
+				await applyAction(result);
+			}
+		};
+	}}
+>
+```
+
+The behavior of `applyAction(result)` depends on `result.type`:
+
+<Tabs>
+<Tab title="success/failure">
+Sets `page.status` to `result.status` and updates `form` and `page.form` to `result.data`
+</Tab>
+
+<Tab title="redirect">
+Calls `goto(result.location, { invalidateAll: true })`
+</Tab>
+
+<Tab title="error">
+Renders the nearest `+error` boundary with `result.error`
+</Tab>
+</Tabs>
+
+### Custom event listener
+
+You can also implement progressive enhancement with a normal event listener:
+
+```svelte
+<!--- file: src/routes/login/+page.svelte --->
+<script>
+	import { invalidateAll, goto } from '$app/navigation';
+	import { applyAction, deserialize } from '$app/forms';
+
+	/** @type {import('./$types').PageProps} */
+	let { form } = $props();
+
+	/** @param {SubmitEvent & { currentTarget: EventTarget & HTMLFormElement}} event */
+	async function handleSubmit(event) {
+		event.preventDefault();
+		const data = new FormData(event.currentTarget, event.submitter);
+
+		const response = await fetch(event.currentTarget.action, {
+			method: 'POST',
+			body: data
+		});
+
+		/** @type {import('@sveltejs/kit').ActionResult} */
+		const result = deserialize(await response.text());
+
+		if (result.type === 'success') {
+			await invalidateAll();
+		}
+
+		applyAction(result);
+	}
+</script>
+
+<form method="POST" onsubmit={handleSubmit}>
+	<!-- content -->
+</form>
+```
+
+<Warning>
+You need to `deserialize` the response before processing it. `JSON.parse()` isn't enough because form actions support returning `Date` or `BigInt` objects.
+</Warning>
+
+## Alternatives
+
+Form actions are the preferred way to send data to the server, but you can also use `+server.js` files to expose a JSON API:
+
+<CodeGroup>
+```svelte Client
+<!--- file: src/routes/send-message/+page.svelte --->
+<script>
+	function rerun() {
+		fetch('/api/ci', {
+			method: 'POST'
+		});
+	}
+</script>
+
+<button onclick={rerun}>Rerun CI</button>
+```
+
+```js Server
+/// file: src/routes/api/ci/+server.js
+/** @type {import('./$types').RequestHandler} */
+export function POST() {
+	// do something
+}
+```
+</CodeGroup>
+
+## GET vs POST
+
+As we've seen, to invoke a form action you must use `method="POST"`.
+
+Some forms don't need to `POST` data to the server — search inputs, for example. For these you can use `method="GET"`:
+
+```html
+<form action="/search">
+	<label>
+		Search
+		<input name="q">
+	</label>
+</form>
+```
+
+Submitting this form will navigate to `/search?q=...` and invoke your load function:
+
+<Note>
+As with `<a>` elements, you can set the `data-sveltekit-reload`, `data-sveltekit-replacestate`, `data-sveltekit-keepfocus` and `data-sveltekit-noscroll` attributes on the `<form>` to control the router's behavior.
+</Note>
+
+## Next steps
+
+<CardGroup cols={2}>
+<Card title="Page options" icon="sliders" href="/core-concepts/page-options">
+Configure SSR, CSR, and prerendering options
+</Card>
+
+<Card title="State management" icon="database" href="/core-concepts/state-management">
+Manage state across server and client
+</Card>
+</CardGroup>

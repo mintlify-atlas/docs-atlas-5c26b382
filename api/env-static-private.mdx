@@ -1,0 +1,199 @@
+---
+title: '$env/static/private'
+description: 'Static server-only environment variables'
+---
+
+The `$env/static/private` module provides access to environment variables that are only available on the server and are replaced at build time. These variables are statically analyzed and replaced during the build process, making them faster to access but requiring a rebuild to change.
+
+## Usage
+
+```javascript
+import { VARIABLE_NAME } from '$env/static/private';
+```
+
+<Note>
+  This module can only be imported in server-side code (e.g., `+page.server.js`, `+layout.server.js`, `+server.js`, and `hooks.server.js`).
+</Note>
+
+## Static Replacement
+
+Unlike dynamic environment variables, static variables are replaced at build time. For example:
+
+```javascript
+import { DATABASE_URL } from '$env/static/private';
+
+console.log(DATABASE_URL);
+```
+
+Becomes (after build):
+
+```javascript
+console.log('postgresql://localhost:5432/mydb');
+```
+
+## Example: Server Load Function
+
+```javascript
+// src/routes/+page.server.js
+import { DATABASE_URL, API_KEY } from '$env/static/private';
+import { createConnection } from './db.js';
+
+export async function load() {
+  const db = await createConnection(DATABASE_URL);
+  const data = await db.query('SELECT * FROM items');
+  
+  return { items: data };
+}
+```
+
+## Example: API Configuration
+
+```javascript
+// src/routes/api/users/+server.js
+import { SMTP_HOST, SMTP_PORT, SMTP_USER } from '$env/static/private';
+import { json } from '@sveltejs/kit';
+import nodemailer from 'nodemailer';
+
+const transporter = nodemailer.createTransport({
+  host: SMTP_HOST,
+  port: SMTP_PORT,
+  auth: { user: SMTP_USER }
+});
+
+export async function POST({ request }) {
+  const { email, message } = await request.json();
+  
+  await transporter.sendMail({
+    from: SMTP_USER,
+    to: email,
+    text: message
+  });
+  
+  return json({ success: true });
+}
+```
+
+## Example: Server Hook
+
+```javascript
+// src/hooks.server.js
+import { JWT_SECRET } from '$env/static/private';
+import jwt from 'jsonwebtoken';
+
+export async function handle({ event, resolve }) {
+  const token = event.cookies.get('token');
+  
+  if (token) {
+    try {
+      event.locals.user = jwt.verify(token, JWT_SECRET);
+    } catch (err) {
+      // Invalid token
+    }
+  }
+  
+  return resolve(event);
+}
+```
+
+## Example: JSON Environment Variable
+
+```javascript
+// src/routes/+layout.server.js
+import { SOME_JSON } from '$env/static/private';
+
+export function load() {
+  const config = JSON.parse(SOME_JSON);
+  
+  return {
+    features: config.features,
+    settings: config.settings
+  };
+}
+```
+
+## Configuration
+
+You can configure which environment variables are included using the `env.privatePrefix` option:
+
+```javascript
+// svelte.config.js
+export default {
+  kit: {
+    env: {
+      privatePrefix: 'PRIVATE_',
+      publicPrefix: 'PUBLIC_'
+    }
+  }
+};
+```
+
+With this configuration, only variables starting with `PRIVATE_` will be available in `$env/static/private`. Variables without a matching prefix are discarded.
+
+## Setting Private Environment Variables
+
+Create a `.env` file in your project root:
+
+```bash
+# .env
+DATABASE_URL=postgresql://localhost:5432/mydb
+API_KEY=secret-key-123
+JWT_SECRET=super-secret-jwt-key
+```
+
+Or set them when building:
+
+```bash
+DATABASE_URL=postgresql://prod:5432/db npm run build
+```
+
+## When to Use Static vs Dynamic
+
+<CardGroup cols={2}>
+  <Card title="Use Static" icon="lock">
+    - Build-time constants that don't change
+    - Better performance (no runtime lookup)
+    - Type-safe access with TypeScript
+    - Dead code elimination possible
+  </Card>
+  
+  <Card title="Use Dynamic" icon="arrows-rotate">
+    - Values that change between deployments
+    - Different staging/production values
+    - Secrets not in build output
+    - Runtime configuration
+  </Card>
+</CardGroup>
+
+## TypeScript Support
+
+SvelteKit automatically generates types for your static environment variables. When you import from `$env/static/private`, TypeScript will provide autocomplete and type checking:
+
+```typescript
+// TypeScript knows about your environment variables
+import { DATABASE_URL, API_KEY } from '$env/static/private';
+
+// DATABASE_URL and API_KEY are typed as string
+const url: string = DATABASE_URL;
+```
+
+## Performance Benefits
+
+Static environment variables offer several performance advantages:
+
+1. **No runtime lookup** - Values are inlined during build
+2. **Dead code elimination** - Unused imports can be tree-shaken
+3. **Smaller bundle** - No need to ship environment variable runtime
+
+## Security Considerations
+
+<Warning>
+  **Never expose private environment variables to client-side code!**
+  
+  Static private variables are only available in server-side modules. Attempting to import them in client code will cause a build error.
+</Warning>
+
+## See Also
+
+- [\$env/dynamic/private](/api/env-dynamic-private) - Dynamic server-only environment variables
+- [\$env/static/public](/api/env-static-public) - Static public environment variables
+- [Configuration](/api/configuration) - Environment variable configuration options

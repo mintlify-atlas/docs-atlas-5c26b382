@@ -1,0 +1,360 @@
+---
+title: State management
+description: Learn how to manage state effectively across server and client in SvelteKit
+---
+
+If you're used to building client-only apps, state management in an app that spans server and client might seem intimidating. This section provides tips for avoiding common gotchas.
+
+## Avoid shared state on the server
+
+Browsers are **stateful** — state is stored in memory as the user interacts with the application. Servers, on the other hand, are **stateless** — the content of the response is determined entirely by the content of the request.
+
+<Warning>
+It's important not to store data in shared variables on the server. Servers are often long-lived and shared by multiple users.
+</Warning>
+
+### The problem
+
+Consider this buggy code:
+
+```js
+/// file: +page.server.js
+let user;
+
+/** @type {import('./$types').PageServerLoad} */
+export function load() {
+	return { user };
+}
+
+/** @satisfies {import('./$types').Actions} */
+export const actions = {
+	default: async ({ request }) => {
+		const data = await request.formData();
+
+		// NEVER DO THIS!
+		user = {
+			name: data.get('name'),
+			embarrassingSecret: data.get('secret')
+		};
+	}
+}
+```
+
+<Accordion title="Why is this bad?">
+The `user` variable is shared by everyone who connects to this server. If Alice submitted an embarrassing secret, and Bob visited the page after her, Bob would know Alice's secret!
+</Accordion>
+
+### The solution
+
+Instead, you should **authenticate** the user using cookies and persist the data to a database:
+
+<Steps>
+<Step title="Use cookies for authentication">
+```js
+export async function load({ cookies }) {
+	const sessionid = cookies.get('sessionid');
+	return {
+		user: await db.getUser(sessionid)
+	};
+}
+```
+</Step>
+
+<Step title="Store data in a database">
+```js
+export const actions = {
+	default: async ({ cookies, request }) => {
+		const sessionid = cookies.get('sessionid');
+		const data = await request.formData();
+		
+		await db.updateUser(sessionid, {
+			name: data.get('name'),
+			secret: data.get('secret')
+		});
+	}
+}
+```
+</Step>
+</Steps>
+
+## No side-effects in load
+
+For the same reason, your `load` functions should be **pure** — no side-effects (except maybe the occasional `console.log(...)`).
+
+### Bad: Writing to global state
+
+```js
+/// file: +page.js
+import { user } from '$lib/user';
+
+/** @type {import('./$types').PageLoad} */
+export async function load({ fetch }) {
+	const response = await fetch('/api/user');
+
+	// NEVER DO THIS!
+	user.set(await response.json());
+}
+```
+
+### Good: Returning data
+
+```js
+/// file: +page.js
+/** @type {import('./$types').PageLoad} */
+export async function load({ fetch }) {
+	const response = await fetch('/api/user');
+
+	return {
+		user: await response.json()
+	};
+}
+```
+
+<Tip>
+Pass the data to components that need it, or use `page.data`.
+</Tip>
+
+## Using state and stores with context
+
+You might wonder how we're able to use `page.data` and other app state if we can't use global state. The answer is that app state on the server uses Svelte's **context API**.
+
+### Creating context-based state
+
+<CodeGroup>
+```svelte Layout
+<!--- file: src/routes/+layout.svelte --->
+<script>
+	import { setContext } from 'svelte';
+
+	/** @type {import('./$types').LayoutProps} */
+	let { data } = $props();
+
+	// Pass a function referencing our state
+	// to the context for child components to access
+	setContext('user', () => data.user);
+</script>
+```
+
+```svelte Page
+<!--- file: src/routes/user/+page.svelte --->
+<script>
+	import { getContext } from 'svelte';
+
+	// Retrieve user state from context
+	const user = getContext('user');
+</script>
+
+<p>Welcome {user().name}</p>
+```
+</CodeGroup>
+
+<Note>
+We're passing a function into `setContext` to keep reactivity across boundaries. Read more about this in the Svelte documentation on passing state into functions.
+</Note>
+
+### Reactivity considerations
+
+<Warning>
+Updating the value of context-based state in deeper-level pages or components while the page is being rendered via SSR will not affect the value in the parent component.
+
+In contrast, on the client the value will be propagated. To avoid values 'flashing' during hydration, it's generally recommended to pass state down into components rather than up.
+</Warning>
+
+## Component and page state is preserved
+
+When you navigate around your application, SvelteKit reuses existing layout and page components.
+
+### The problem
+
+Consider this buggy code:
+
+```svelte
+<!--- file: src/routes/blog/[slug]/+page.svelte --->
+<script>
+	/** @type {import('./$types').PageProps} */
+	let { data } = $props();
+
+	// THIS CODE IS BUGGY!
+	const wordCount = data.content.split(' ').length;
+	const estimatedReadingTime = wordCount / 250;
+</script>
+
+<header>
+	<h1>{data.title}</h1>
+	<p>Reading time: {Math.round(estimatedReadingTime)} minutes</p>
+</header>
+
+<div>{@html data.content}</div>
+```
+
+<Accordion title="Why is this buggy?">
+Navigating from `/blog/my-short-post` to `/blog/my-long-post` won't cause the component to be destroyed and recreated. The `data` prop will update, but `wordCount` and `estimatedReadingTime` won't be recalculated.
+</Accordion>
+
+### The solution
+
+Make the values reactive using `$derived`:
+
+```svelte
+/// file: src/routes/blog/[slug]/+page.svelte
+<script>
+	/** @type {import('./$types').PageProps} */
+	let { data } = $props();
+
+	let wordCount = $derived(data.content.split(' ').length);
+	let estimatedReadingTime = $derived(wordCount / 250);
+</script>
+```
+
+### Force component recreation
+
+If you need to completely destroy and remount a component on navigation:
+
+```svelte
+<script>
+	import { page } from '$app/state';
+</script>
+
+{#key page.url.pathname}
+	<BlogPost title={data.title} content={data.title} />
+{/key}
+```
+
+<Note>
+If your code in `onMount` and `onDestroy` needs to run again after navigation, use `afterNavigate` and `beforeNavigate` respectively.
+</Note>
+
+## Storing state in the URL
+
+If you have state that should survive a reload and/or affect SSR, such as filters or sorting rules on a table, URL search parameters are a good place to put them.
+
+### Using search params
+
+<Tabs>
+<Tab title="In links">
+```svelte
+<a href="?sort=price&order=ascending">Sort by price</a>
+```
+</Tab>
+
+<Tab title="In forms">
+```svelte
+<form action="?sort=price&order=ascending">
+	<!-- form content -->
+</form>
+```
+</Tab>
+
+<Tab title="Programmatically">
+```svelte
+<script>
+	import { goto } from '$app/navigation';
+
+	function sortByPrice() {
+		goto('?sort=price&order=ascending');
+	}
+</script>
+```
+</Tab>
+</Tabs>
+
+### Accessing in load functions
+
+```js
+/// file: +page.js
+export function load({ url }) {
+	const sort = url.searchParams.get('sort');
+	const order = url.searchParams.get('order');
+	
+	return {
+		sort,
+		order
+	};
+}
+```
+
+### Accessing in components
+
+```svelte
+<script>
+	import { page } from '$app/state';
+	
+	const sort = $derived(page.url.searchParams.get('sort'));
+	const order = $derived(page.url.searchParams.get('order'));
+</script>
+```
+
+## Storing ephemeral state in snapshots
+
+Some UI state, such as 'is the accordion open?', is disposable — if the user navigates away or refreshes the page, it doesn't matter if the state is lost.
+
+In some cases, you do want the data to persist if the user navigates to a different page and comes back. For this, SvelteKit provides **snapshots**:
+
+<Steps>
+<Step title="Export snapshot object">
+```svelte
+<script>
+	let expanded = $state(false);
+
+	export const snapshot = {
+		capture: () => expanded,
+		restore: (value) => expanded = value
+	};
+</script>
+```
+</Step>
+
+<Step title="User navigates away">
+The `capture` function is called, storing the current state
+</Step>
+
+<Step title="User navigates back">
+The `restore` function is called with the stored value
+</Step>
+</Steps>
+
+<Note>
+Snapshots let you associate component state with a history entry without storing it in the URL or database.
+</Note>
+
+## State management strategies
+
+For different types of state, use different strategies:
+
+<CardGroup cols={2}>
+<Card title="Authentication state" icon="key">
+Use cookies and `event.locals`
+</Card>
+
+<Card title="Page data" icon="file">
+Use `load` functions and return data
+</Card>
+
+<Card title="Filters and sorting" icon="filter">
+Use URL search parameters
+</Card>
+
+<Card title="UI state" icon="toggle-on">
+Use Svelte state and context
+</Card>
+
+<Card title="Ephemeral history" icon="clock-rotate-left">
+Use snapshots
+</Card>
+
+<Card title="Global client state" icon="globe">
+Use context or stores (only if not using SSR)
+</Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+<Card title="Remote functions" icon="server" href="/core-concepts/remote-functions">
+Type-safe communication between client and server
+</Card>
+
+<Card title="Routing" icon="route" href="/core-concepts/routing">
+Learn about SvelteKit's filesystem-based router
+</Card>
+</CardGroup>

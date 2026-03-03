@@ -1,0 +1,348 @@
+---
+title: Image optimization
+description: Optimize images for performance with multiple formats and sizes
+---
+
+Images can significantly impact your app's performance. For best results, you should generate optimal formats, create different sizes for different screens, and ensure assets can be cached effectively.
+
+## Overview
+
+There are several approaches to image optimization in SvelteKit:
+
+<CardGroup cols={3}>
+  <Card title="Vite assets" icon="bolt">
+    Built-in asset handling with imports
+  </Card>
+  
+  <Card title="@sveltejs/enhanced-img" icon="image">
+    Automatic optimization and responsive images
+  </Card>
+  
+  <Card title="CDN" icon="cloud">
+    Dynamic optimization for CMS images
+  </Card>
+</CardGroup>
+
+## Vite's built-in handling
+
+[Vite automatically processes imported assets](https://vitejs.dev/guide/assets.html) for improved performance:
+
+- Adds hashes to filenames for caching
+- Inlines small assets (below `assetsInlineLimit`)
+- Works with CSS `url()` function
+- Handles images, video, audio, and more
+
+```svelte
+<script>
+	import logo from '$lib/assets/logo.png';
+</script>
+
+<img alt="The project logo" src={logo} />
+```
+
+<Note>
+  Vite asset handling is great for basic needs but doesn't create responsive images or convert formats.
+</Note>
+
+## @sveltejs/enhanced-img
+
+The enhanced image plugin provides automatic optimization:
+
+<Steps>
+  <Step title="Install the package">
+    ```bash
+    npm i -D @sveltejs/enhanced-img
+    ```
+  </Step>
+  
+  <Step title="Configure Vite">
+    ```javascript vite.config.js
+    import { sveltekit } from '@sveltejs/kit/vite';
+    import { enhancedImages } from '@sveltejs/enhanced-img';
+    import { defineConfig } from 'vite';
+    
+    export default defineConfig({
+      plugins: [
+        enhancedImages(), // must come before sveltekit()
+        sveltekit()
+      ]
+    });
+    ```
+  </Step>
+  
+  <Step title="Use enhanced images">
+    ```svelte
+    <enhanced:img src="./path/to/image.jpg" alt="A description" />
+    ```
+  </Step>
+</Steps>
+
+### What it does
+
+<AccordionGroup>
+  <Accordion title="Format optimization">
+    Automatically generates modern formats like `.avif` and `.webp` with fallbacks
+  </Accordion>
+  
+  <Accordion title="Responsive images">
+    Creates multiple sizes and generates `srcset` attributes for different devices
+  </Accordion>
+  
+  <Accordion title="Intrinsic dimensions">
+    Sets `width` and `height` automatically to prevent layout shift
+  </Accordion>
+  
+  <Accordion title="Privacy protection">
+    Strips EXIF data from images
+  </Accordion>
+</AccordionGroup>
+
+### Basic usage
+
+Use `<enhanced:img>` instead of `<img>`:
+
+```svelte
+<enhanced:img src="./path/to/your/image.jpg" alt="An alt text" />
+```
+
+At build time, this becomes an `<img>` wrapped by a `<picture>` with multiple formats and sizes.
+
+<Tip>
+  Provide images at 2x resolution for HiDPI displays. The plugin will automatically generate smaller versions for standard displays.
+</Tip>
+
+### Dynamic image selection
+
+Import images with the `?enhanced` query parameter:
+
+<CodeGroup>
+```svelte Single import
+<script>
+	import MyImage from './path/to/image.jpg?enhanced';
+</script>
+
+<enhanced:img src={MyImage} alt="some alt text" />
+```
+
+```svelte Glob import
+<script>
+	const imageModules = import.meta.glob(
+		'/path/to/assets/*.{jpg,png,webp}',
+		{
+			eager: true,
+			query: {
+				enhanced: true
+			}
+		}
+	)
+</script>
+
+{#each Object.entries(imageModules) as [_path, module]}
+	<enhanced:img src={module.default} alt="Gallery image" />
+{/each}
+```
+</CodeGroup>
+
+### Responsive images with sizes
+
+For large images, specify `sizes` to serve smaller versions on smaller devices:
+
+```svelte
+<enhanced:img 
+	src="./hero.png" 
+	sizes="min(1280px, 100vw)"
+/>
+```
+
+<Accordion title="Custom widths">
+  Specify exact widths with the `w` query parameter:
+  
+  ```svelte
+  <enhanced:img
+    src="./image.png?w=1280;640;400"
+    sizes="(min-width:1920px) 1280px, (min-width:1080px) 640px, (min-width:768px) 400px"
+  />
+  ```
+</Accordion>
+
+### Per-image transforms
+
+Apply transforms via query parameters:
+
+```svelte
+<enhanced:img src="./image.jpg?blur=15" alt="Blurred background" />
+```
+
+Available transforms:
+- `blur` - Gaussian blur radius
+- `quality` - Compression quality (0-100)
+- `flatten` - Flatten alpha channel
+- `rotate` - Rotation angle
+- `flip` - Flip horizontally
+- `flop` - Flip vertically
+- And [many more](https://github.com/JonasKruckenberg/imagetools/blob/main/docs/directives.md)
+
+### Intrinsic dimensions
+
+`width` and `height` are inferred automatically, but you can override them with CSS:
+
+```svelte
+<style>
+	.hero-image img {
+		width: var(--size);
+		height: auto;
+	}
+</style>
+
+<div class="hero-image">
+	<enhanced:img src="./hero.jpg" alt="Hero" />
+</div>
+```
+
+### Build caching
+
+<Note>
+  The first build takes longer due to image processing. Results are cached in `./node_modules/.cache/imagetools` for fast subsequent builds.
+</Note>
+
+## Loading images from a CDN
+
+For images from a CMS or database, use a CDN with dynamic optimization:
+
+<CardGroup cols={2}>
+  <Card title="@unpic/svelte" icon="images" href="https://unpic.pics/img/svelte/">
+    CDN-agnostic component supporting multiple providers
+  </Card>
+  
+  <Card title="Cloudinary" icon="cloud" href="https://svelte.cloudinary.dev/">
+    Cloudinary's official Svelte SDK
+  </Card>
+</CardGroup>
+
+### CDN benefits and tradeoffs
+
+<AccordionGroup>
+  <Accordion title="Benefits">
+    - Images optimized at request time
+    - More flexibility with sizes
+    - No build-time processing
+    - Dynamic image sources (CMS, user uploads)
+  </Accordion>
+  
+  <Accordion title="Tradeoffs">
+    - Potential usage costs
+    - First request may be slow (lazy generation)
+    - Requires proper caching strategy
+    - Additional dependency
+  </Accordion>
+</AccordionGroup>
+
+### Example with @unpic/svelte
+
+```svelte
+<script>
+	import { Image } from '@unpic/svelte';
+</script>
+
+<Image
+	src="https://cdn.example.com/image.jpg"
+	layout="constrained"
+	width={800}
+	height={600}
+	alt="A cat"
+/>
+```
+
+## Best practices
+
+<Steps>
+  <Step title="Choose the right solution">
+    - **Static assets in repo:** Use Vite or `@sveltejs/enhanced-img`
+    - **CMS images:** Use CDN with `@unpic/svelte`
+    - **Meta tags:** Use Vite's import handling
+  </Step>
+  
+  <Step title="Provide high-quality sources">
+    Images should be 2x the display size for HiDPI screens. Optimization tools will scale down but can't add detail.
+  </Step>
+  
+  <Step title="Use sizes attribute">
+    For images larger than ~400px, specify `sizes` so smaller devices load appropriate versions:
+    
+    ```svelte
+    <enhanced:img 
+      src="./hero.jpg" 
+      sizes="min(1280px, 100vw)"
+    />
+    ```
+  </Step>
+  
+  <Step title="Prioritize important images">
+    For LCP images, set `fetchpriority="high"` and avoid `loading="lazy"`:
+    
+    ```svelte
+    <enhanced:img 
+      src="./hero.jpg" 
+      fetchpriority="high"
+      alt="Hero image"
+    />
+    ```
+  </Step>
+  
+  <Step title="Always provide alt text">
+    The Svelte compiler warns if you omit `alt` attributes:
+    
+    ```svelte
+    <enhanced:img src="./image.jpg" alt="Descriptive text" />
+    ```
+  </Step>
+  
+  <Step title="Serve via CDN">
+    Use a CDN to reduce latency by distributing assets globally, regardless of your optimization approach.
+  </Step>
+</Steps>
+
+## Common pitfalls
+
+<Warning>
+  **Don't use `em` or `rem` in sizes with modified root font-size:**
+  
+  ```css
+  /* Bad: will cause incorrect image sizing */
+  html { font-size: 62.5%; }
+  ```
+  
+  When used in `sizes` or `@media` queries, `em` and `rem` use the user's default font size, not your CSS-modified value.
+</Warning>
+
+<Warning>
+  **@sveltejs/enhanced-img only optimizes local files:**
+  
+  It can't optimize images from:
+  - Your database
+  - A CMS
+  - User uploads
+  - External URLs
+  
+  For these cases, use a CDN solution.
+</Warning>
+
+## Performance metrics
+
+Proper image optimization improves:
+
+<ResponseField name="LCP (Largest Contentful Paint)" type="metric">
+  Fast-loading hero images improve LCP scores
+</ResponseField>
+
+<ResponseField name="CLS (Cumulative Layout Shift)" type="metric">
+  Setting `width` and `height` prevents layout shift
+</ResponseField>
+
+<ResponseField name="Bandwidth usage" type="metric">
+  Smaller files and modern formats reduce data transfer
+</ResponseField>
+
+<Card title="Learn more" icon="book" href="https://web.dev/articles/cls">
+  Web.dev: Optimize Cumulative Layout Shift
+</Card>

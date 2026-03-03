@@ -1,0 +1,264 @@
+---
+title: Web standards
+description: Learn how SvelteKit builds on standard Web APIs
+---
+
+Throughout this documentation, you'll see references to the standard [Web APIs](https://developer.mozilla.org/en-US/docs/Web/API) that SvelteKit builds on top of. Rather than reinventing the wheel, we _use the platform_, which means your existing web development skills are applicable to SvelteKit. Conversely, time spent learning SvelteKit will help you be a better web developer elsewhere.
+
+<Tip>
+These APIs are available in all modern browsers and in many non-browser environments like Cloudflare Workers, Deno, and Vercel Functions. During development, and in adapters for Node-based environments (including AWS Lambda), they're made available via polyfills where necessary.
+</Tip>
+
+## Fetch APIs
+
+SvelteKit uses [`fetch`](https://developer.mozilla.org/en-US/docs/Web/API/fetch) for getting data from the network. It's available in hooks and server routes as well as in the browser.
+
+<Note>
+A special version of `fetch` is available in `load` functions, server hooks and API routes for invoking endpoints directly during server-side rendering, without making an HTTP call, while preserving credentials. To make credentialled fetches in server-side code outside `load`, you must explicitly pass `cookie` and/or `authorization` headers. It also allows you to make relative requests, whereas server-side `fetch` normally requires a fully qualified URL.
+</Note>
+
+Besides `fetch` itself, the [Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) includes the following interfaces:
+
+### Request
+
+An instance of [`Request`](https://developer.mozilla.org/en-US/docs/Web/API/Request) is accessible in hooks and server routes as `event.request`. It contains useful methods like `request.json()` and `request.formData()` for getting data that was posted to an endpoint.
+
+```javascript src/routes/api/user/+server.js
+/** @type {import('./$types').RequestHandler} */
+export async function POST({ request }) {
+  const data = await request.json();
+  // Process the data
+  return new Response('OK');
+}
+```
+
+### Response
+
+An instance of [`Response`](https://developer.mozilla.org/en-US/docs/Web/API/Response) is returned from `await fetch(...)` and handlers in `+server.js` files. Fundamentally, a SvelteKit app is a machine for turning a `Request` into a `Response`.
+
+```javascript src/routes/api/data/+server.js
+import { json } from '@sveltejs/kit';
+
+/** @type {import('./$types').RequestHandler} */
+export function GET() {
+  return json({ message: 'Hello world' });
+}
+```
+
+<Tip>
+SvelteKit provides helper functions like `json()` and `error()` to make it easier to create `Response` objects.
+</Tip>
+
+### Headers
+
+The [`Headers`](https://developer.mozilla.org/en-US/docs/Web/API/Headers) interface allows you to read incoming `request.headers` and set outgoing `response.headers`.
+
+```javascript src/routes/what-is-my-user-agent/+server.js
+import { json } from '@sveltejs/kit';
+
+/** @type {import('./$types').RequestHandler} */
+export function GET({ request }) {
+  // Log all headers
+  console.log(...request.headers);
+
+  // Create a JSON Response using a header we received
+  return json(
+    {
+      // Retrieve a specific header
+      userAgent: request.headers.get('user-agent')
+    },
+    {
+      // Set a header on the response
+      headers: { 'x-custom-header': 'potato' }
+    }
+  );
+}
+```
+
+## FormData
+
+When dealing with HTML native form submissions you'll be working with [`FormData`](https://developer.mozilla.org/en-US/docs/Web/API/FormData) objects.
+
+```javascript src/routes/login/+page.server.js
+/** @type {import('./$types').Actions} */
+export const actions = {
+  login: async ({ request }) => {
+    const data = await request.formData();
+    const username = data.get('username');
+    const password = data.get('password');
+    
+    // Process login
+    return { success: true };
+  }
+};
+```
+
+<CodeGroup>
+```svelte src/routes/login/+page.svelte
+<script>
+  import { enhance } from '$app/forms';
+</script>
+
+<form method="POST" action="?/login" use:enhance>
+  <input name="username" type="text" />
+  <input name="password" type="password" />
+  <button>Log in</button>
+</form>
+```
+
+```javascript Server action (src/routes/login/+page.server.js)
+/** @type {import('./$types').Actions} */
+export const actions = {
+  login: async ({ request }) => {
+    const data = await request.formData();
+    
+    // Log all fields
+    console.log([...data]);
+    
+    return {
+      username: data.get('username')
+    };
+  }
+};
+```
+</CodeGroup>
+
+## Stream APIs
+
+Most of the time, your endpoints will return complete data. Sometimes, you may need to return a response that's too large to fit in memory in one go, or is delivered in chunks, and for this the platform provides [streams](https://developer.mozilla.org/en-US/docs/Web/API/Streams_API):
+
+- [ReadableStream](https://developer.mozilla.org/en-US/docs/Web/API/ReadableStream)
+- [WritableStream](https://developer.mozilla.org/en-US/docs/Web/API/WritableStream)
+- [TransformStream](https://developer.mozilla.org/en-US/docs/Web/API/TransformStream)
+
+```javascript Example: Streaming response
+export function GET() {
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue('chunk 1');
+      controller.enqueue('chunk 2');
+      controller.close();
+    }
+  });
+  
+  return new Response(stream);
+}
+```
+
+## URL APIs
+
+URLs are represented by the [`URL`](https://developer.mozilla.org/en-US/docs/Web/API/URL) interface, which includes useful properties like `origin` and `pathname` (and, in the browser, `hash`). This interface shows up in various places:
+
+- `event.url` in hooks and server routes
+- `$page.url` in pages
+- `from` and `to` in `beforeNavigate` and `afterNavigate`
+
+<Accordion title="Example: Accessing URL properties">
+```javascript src/routes/blog/+page.server.js
+/** @type {import('./$types').PageServerLoad} */
+export function load({ url }) {
+  console.log(url.pathname);  // '/blog'
+  console.log(url.origin);    // 'https://example.com'
+  console.log(url.href);      // 'https://example.com/blog?page=1'
+  
+  const page = url.searchParams.get('page');
+  return { page };
+}
+```
+</Accordion>
+
+### URLSearchParams
+
+Wherever you encounter a URL, you can access query parameters via `url.searchParams`, which is an instance of [`URLSearchParams`](https://developer.mozilla.org/en-US/docs/Web/API/URLSearchParams):
+
+```javascript
+const foo = url.searchParams.get('foo');
+const bar = url.searchParams.getAll('bar'); // for multiple values
+const has = url.searchParams.has('baz');
+```
+
+<Accordion title="Working with search parameters">
+```javascript src/routes/search/+page.server.js
+/** @type {import('./$types').PageServerLoad} */
+export function load({ url }) {
+  const query = url.searchParams.get('q');
+  const page = Number(url.searchParams.get('page')) || 1;
+  const filters = url.searchParams.getAll('filter');
+  
+  return {
+    query,
+    page,
+    filters,
+    results: performSearch(query, { page, filters })
+  };
+}
+
+function performSearch(query, options) {
+  // Search implementation
+  return [];
+}
+```
+</Accordion>
+
+## Web Crypto
+
+The [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API) is made available via the `crypto` global. It's used internally for Content Security Policy headers, but you can also use it for things like generating UUIDs:
+
+```javascript
+const uuid = crypto.randomUUID();
+```
+
+<Accordion title="Example: Hashing with Web Crypto">
+```javascript src/lib/server/crypto.js
+/**
+ * Hash a password using SHA-256
+ * @param {string} password
+ */
+export async function hashPassword(password) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  
+  // Convert to hex string
+  return Array.from(new Uint8Array(hash))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+```
+</Accordion>
+
+## Benefits of using web standards
+
+By building on web standards, SvelteKit provides several advantages:
+
+<CardGroup cols={2}>
+  <Card title="Transferable skills" icon="graduation-cap">
+    Knowledge you gain is applicable across the web platform, not just SvelteKit
+  </Card>
+  <Card title="Future-proof" icon="shield">
+    As browsers add new features, SvelteKit apps benefit automatically
+  </Card>
+  <Card title="Better compatibility" icon="puzzle-piece">
+    Code works across different runtimes: Node.js, Deno, Cloudflare Workers, etc.
+  </Card>
+  <Card title="Reduced learning curve" icon="book-open">
+    If you know web APIs, you already know much of SvelteKit
+  </Card>
+</CardGroup>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Routing" icon="route" href="/core-concepts/routing">
+    Learn how to create pages and API routes
+  </Card>
+  <Card title="Loading data" icon="database" href="/core-concepts/load">
+    Fetch data for your pages using load functions
+  </Card>
+  <Card title="Form actions" icon="paper-plane" href="/core-concepts/form-actions">
+    Handle form submissions with progressive enhancement
+  </Card>
+  <Card title="Hooks" icon="hook" href="https://svelte.dev/docs/kit/hooks">
+    Intercept and modify requests and responses
+  </Card>
+</CardGroup>

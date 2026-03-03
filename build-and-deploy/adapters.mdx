@@ -1,0 +1,97 @@
+---
+title: Adapters
+description: Learn how adapters prepare your SvelteKit app for deployment
+---
+
+Before you can deploy your SvelteKit app, you need to _adapt_ it for your deployment target. Adapters are small plugins that take the built app as input and generate output for deployment.
+
+## Official adapters
+
+SvelteKit provides official adapters for a variety of platforms:
+
+- [`@sveltejs/adapter-auto`](/build-and-deploy/adapter-auto) - Automatically detects your environment
+- [`@sveltejs/adapter-cloudflare`](/build-and-deploy/adapter-cloudflare) - For Cloudflare Workers and Cloudflare Pages
+- [`@sveltejs/adapter-netlify`](/build-and-deploy/adapter-netlify) - For Netlify
+- [`@sveltejs/adapter-node`](/build-and-deploy/adapter-node) - For Node servers
+- [`@sveltejs/adapter-static`](/build-and-deploy/adapter-static) - For static site generation (SSG)
+- [`@sveltejs/adapter-vercel`](/build-and-deploy/adapter-vercel) - For Vercel
+
+## Using adapters
+
+Your adapter is specified in `svelte.config.js`:
+
+```javascript
+/// file: svelte.config.js
+import adapter from '@sveltejs/adapter-auto';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+  kit: {
+    adapter: adapter({
+      // adapter options go here
+    })
+  }
+};
+
+export default config;
+```
+
+## Platform-specific context
+
+Some adapters may have access to additional information about the request. For example, Cloudflare Workers can access an `env` object containing KV namespaces and other bindings.
+
+This information is passed to the `RequestEvent` used in hooks (see [advanced/hooks](/advanced/hooks)) and server routes as the `platform` property:
+
+```javascript
+/// file: src/hooks.server.js
+/** @type {import('@sveltejs/kit').Handle} */
+export async function handle({ event, resolve }) {
+  // Access platform-specific context
+  const { platform } = event;
+  
+  // For example, on Cloudflare:
+  // const value = await platform.env.MY_KV_NAMESPACE.get('key');
+  
+  return resolve(event);
+}
+```
+
+<Note>
+Consult each adapter's documentation to learn what platform-specific context is available.
+</Note>
+
+## Adapter capabilities
+
+Different adapters support different features:
+
+| Feature | Description |
+|---------|-------------|
+| Server-side rendering | Dynamic rendering of pages on each request |
+| Prerendering | Static HTML generation at build time |
+| Edge functions | Code running at the edge, closer to users |
+| Streaming | Streaming responses for better performance |
+| Read API | Access to static assets via `read` from `$app/server` |
+
+## Community adapters
+
+In addition to the official adapters, the community has created adapters for other platforms. You can find community adapters on npm by searching for "sveltekit-adapter".
+
+## Creating custom adapters
+
+If you need to deploy to a platform without an existing adapter, you can create your own. Adapters implement the `Adapter` interface from `@sveltejs/kit`:
+
+```typescript
+interface Adapter {
+  name: string;
+  adapt(builder: Builder): Promise<void> | void;
+  emulate?(): AdapterEmulation;
+  supports?: {
+    read?: (details: { config: any; route: RouteDefinition }) => boolean;
+    instrumentation?: () => boolean;
+  };
+}
+```
+
+<Tip>
+Refer to the source code of official adapters for examples of how to implement custom adapters.
+</Tip>

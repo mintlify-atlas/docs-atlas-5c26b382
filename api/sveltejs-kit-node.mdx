@@ -1,0 +1,201 @@
+---
+title: '@sveltejs/kit/node'
+description: Node.js-specific utilities for SvelteKit adapters and server environments
+---
+
+The `@sveltejs/kit/node` module provides utilities for working with Node.js HTTP servers in SvelteKit applications and adapters.
+
+## getRequest
+
+Converts a Node.js `IncomingMessage` into a standard Web `Request` object.
+
+<ParamField path="options" type="object" required>
+  Configuration options for converting the request.
+  
+  <ParamField path="options.request" type="http.IncomingMessage" required>
+    The Node.js HTTP request object.
+  </ParamField>
+  
+  <ParamField path="options.base" type="string" required>
+    The base URL to use when constructing the Request URL.
+  </ParamField>
+  
+  <ParamField path="options.bodySizeLimit" type="number">
+    Optional limit for request body size in bytes. If the content-length exceeds this limit, a 413 error will be thrown.
+  </ParamField>
+</ParamField>
+
+<ResponseField name="return" type="Promise<Request>">
+  A Promise that resolves to a standard Web Request object.
+</ResponseField>
+
+```js
+import { getRequest } from '@sveltejs/kit/node';
+import http from 'node:http';
+
+const server = http.createServer(async (req, res) => {
+  const request = await getRequest({
+    request: req,
+    base: 'http://localhost:3000',
+    bodySizeLimit: 1024 * 1024 // 1MB limit
+  });
+  
+  // Now you can use the standard Request API
+  const body = await request.json();
+});
+```
+
+### Features
+
+- Handles HTTP/2 pseudo-headers correctly
+- Manages request body as a `ReadableStream`
+- Enforces body size limits with proper error handling
+- Supports request abortion and cancellation
+- Automatically handles GET/HEAD requests (no body)
+
+## setResponse
+
+Writes a Web `Response` object to a Node.js `ServerResponse`.
+
+<ParamField path="res" type="http.ServerResponse" required>
+  The Node.js HTTP response object to write to.
+</ParamField>
+
+<ParamField path="response" type="Response" required>
+  The standard Web Response object to convert and send.
+</ParamField>
+
+<ResponseField name="return" type="Promise<void>">
+  A Promise that resolves when the response has been fully written.
+</ResponseField>
+
+```js
+import { setResponse } from '@sveltejs/kit/node';
+import http from 'node:http';
+
+const server = http.createServer(async (req, res) => {
+  // Create a Web Response
+  const response = new Response(
+    JSON.stringify({ message: 'Hello' }),
+    {
+      status: 200,
+      headers: {
+        'content-type': 'application/json'
+      }
+    }
+  );
+  
+  // Write it to the Node.js response
+  await setResponse(res, response);
+});
+```
+
+### Features
+
+- Handles all response headers correctly
+- Special handling for `set-cookie` headers (supports multiple values)
+- Streams response body efficiently
+- Handles backpressure with Node.js streams
+- Gracefully handles errors and response cancellation
+- Detects and prevents writing to locked response bodies
+
+## createReadableStream
+
+Converts a file on disk to a Web `ReadableStream`.
+
+<Info>
+Available since version 2.4.0
+</Info>
+
+<ParamField path="file" type="string" required>
+  The path to the file on disk.
+</ParamField>
+
+<ResponseField name="return" type="ReadableStream">
+  A Web ReadableStream that reads from the file.
+</ResponseField>
+
+```js
+import { createReadableStream } from '@sveltejs/kit/node';
+
+export async function GET() {
+  const stream = createReadableStream('/path/to/large-file.dat');
+  
+  return new Response(stream, {
+    headers: {
+      'content-type': 'application/octet-stream',
+      'content-disposition': 'attachment; filename="file.dat"'
+    }
+  });
+}
+```
+
+### Use Cases
+
+- Streaming large files without loading them entirely into memory
+- Serving static assets in custom adapters
+- Creating efficient file download endpoints
+- Building custom media streaming solutions
+
+## Example: Complete Node.js Server
+
+```js
+import { getRequest, setResponse } from '@sveltejs/kit/node';
+import { Server } from '@sveltejs/kit';
+import { manifest } from './server/manifest.js';
+import http from 'node:http';
+
+const server = new Server(manifest);
+await server.init({ env: process.env });
+
+const httpServer = http.createServer(async (req, res) => {
+  try {
+    // Convert Node.js request to Web Request
+    const request = await getRequest({
+      request: req,
+      base: `http://${req.headers.host}`,
+      bodySizeLimit: 10 * 1024 * 1024 // 10MB
+    });
+    
+    // Handle with SvelteKit
+    const response = await server.respond(request, {
+      getClientAddress: () => {
+        return req.socket.remoteAddress || '';
+      }
+    });
+    
+    // Convert Web Response back to Node.js response
+    await setResponse(res, response);
+  } catch (err) {
+    console.error('Error:', err);
+    res.writeHead(500).end('Internal Server Error');
+  }
+});
+
+httpServer.listen(3000, () => {
+  console.log('Server listening on port 3000');
+});
+```
+
+## Error Handling
+
+The `getRequest` function will throw a `SvelteKitError` with status 413 (Payload Too Large) if:
+- The `content-length` header exceeds `bodySizeLimit`
+- The actual request body size exceeds `bodySizeLimit`
+- The request body size exceeds the declared `content-length`
+
+```js
+import { getRequest } from '@sveltejs/kit/node';
+
+try {
+  const request = await getRequest({
+    request: req,
+    base: 'http://localhost',
+    bodySizeLimit: 1024 // 1KB limit
+  });
+} catch (err) {
+  if (err.status === 413) {
+    console.log('Request body too large');
+  }
+}
+```

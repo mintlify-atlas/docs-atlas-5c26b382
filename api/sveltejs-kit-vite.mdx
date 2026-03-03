@@ -1,0 +1,241 @@
+---
+title: '@sveltejs/kit/vite'
+description: Vite plugin for SvelteKit integration
+---
+
+The `@sveltejs/kit/vite` module exports the SvelteKit Vite plugin that powers the framework's build system and development server.
+
+## sveltekit
+
+Returns an array of Vite plugins that enable SvelteKit functionality. This is the main entry point for integrating SvelteKit with Vite.
+
+<ResponseField name="return" type="Promise<Plugin[]>">
+  A Promise that resolves to an array of Vite plugins, including the Svelte plugin and SvelteKit-specific plugins.
+</ResponseField>
+
+### Basic Usage
+
+```js
+// vite.config.js
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  plugins: [sveltekit()]
+});
+```
+
+### What It Does
+
+The `sveltekit()` function returns multiple plugins that handle:
+
+1. **Svelte compilation** - Integrates `@sveltejs/vite-plugin-svelte`
+2. **Routing** - Scans your routes directory and generates the manifest
+3. **Server-side rendering** - Configures SSR build and dev server
+4. **Code generation** - Creates virtual modules like `$app/*`, `$env/*`, `$service-worker`
+5. **Development mode** - Provides HMR and the dev server
+6. **Production builds** - Orchestrates client, server, and service worker builds
+7. **Prerendering** - Handles static page generation
+8. **Adapter integration** - Runs your configured adapter after build
+
+### Configuration
+
+The plugin reads your configuration from `svelte.config.js`. Most options are configured there:
+
+```js
+// svelte.config.js
+import adapter from '@sveltejs/adapter-auto';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+  kit: {
+    adapter: adapter(),
+    
+    // All SvelteKit options
+    paths: {
+      base: '/my-app'
+    },
+    
+    alias: {
+      $components: 'src/components'
+    }
+  },
+  
+  // Options for the Svelte plugin
+  preprocess: [],
+  compilerOptions: {
+    // Svelte compiler options
+  }
+};
+
+export default config;
+```
+
+### Vite Config Integration
+
+```js
+// vite.config.js
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  plugins: [sveltekit()],
+  
+  // You can still add Vite-specific config
+  server: {
+    port: 3000,
+    strictPort: false
+  },
+  
+  preview: {
+    port: 4173
+  },
+  
+  // Custom build options
+  build: {
+    sourcemap: true
+  },
+  
+  // Add more Vite plugins
+  // plugins: [sveltekit(), someOtherPlugin()]
+});
+```
+
+### Virtual Modules
+
+The SvelteKit plugin provides several virtual modules:
+
+#### `$app/*`
+
+```ts
+import { browser, building, version } from '$app/environment';
+import { goto, invalidate } from '$app/navigation';
+import { page } from '$app/stores';
+import { base, assets } from '$app/paths';
+```
+
+#### `$env/*`
+
+```ts
+import { PUBLIC_API_URL } from '$env/static/public';
+import { DATABASE_URL } from '$env/static/private';
+import { env } from '$env/dynamic/public';
+```
+
+#### `$service-worker`
+
+```ts
+import { build, files, prerendered, version } from '$service-worker';
+```
+
+### Development Server
+
+In development mode, the plugin:
+- Starts a Vite dev server with HMR
+- Handles SSR for all routes
+- Provides detailed error overlays
+- Auto-reloads on configuration changes
+- Optimizes dependencies
+
+```bash
+npm run dev
+# or
+vite dev
+```
+
+### Production Builds
+
+The plugin orchestrates multiple build steps:
+
+1. **Server build** - Builds the SSR server and analyzes routes
+2. **Client build** - Builds the browser bundle with code splitting
+3. **Service worker build** - If configured, builds the service worker
+4. **Prerendering** - Generates static HTML for prerenderable pages
+5. **Adapter** - Runs your adapter to prepare for deployment
+
+```bash
+npm run build
+# or
+vite build
+```
+
+### Advanced: Multiple Plugins
+
+You can combine the SvelteKit plugin with other Vite plugins:
+
+```js
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+import { imagetools } from 'vite-imagetools';
+import compression from 'vite-plugin-compression';
+
+export default defineConfig({
+  plugins: [
+    sveltekit(),
+    imagetools(),
+    compression()
+  ]
+});
+```
+
+### Config Enforcement
+
+SvelteKit enforces certain Vite configuration options to ensure correct operation. The following options will be overridden:
+
+- `appType`
+- `base`
+- `build.cssCodeSplit`
+- `build.emptyOutDir`
+- `build.manifest`
+- `build.outDir`
+- `build.rollupOptions.input`
+- `build.rollupOptions.output`
+- `build.rollupOptions.preserveEntrySignatures`
+- `publicDir`
+- `resolve.alias` (partially - SvelteKit aliases are added)
+- `root`
+
+If you set these in your `vite.config.js`, you'll see a warning during build.
+
+### TypeScript
+
+For TypeScript support, ensure you have the proper types:
+
+```json
+// tsconfig.json
+{
+  "extends": "./.svelte-kit/tsconfig.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "skipLibCheck": true,
+    "sourceMap": true,
+    "strict": true
+  }
+}
+```
+
+### Environment Variables
+
+The plugin handles environment variables based on SvelteKit conventions:
+
+- `PUBLIC_*` variables are available in `$env/static/public` and `$env/dynamic/public`
+- All variables are available in `$env/static/private` and `$env/dynamic/private` (server-only)
+- Variables are loaded from `.env` files
+
+```env
+# .env
+PUBLIC_API_URL=https://api.example.com
+DATABASE_URL=postgresql://localhost/mydb
+```
+
+```ts
+// Available everywhere (including browser)
+import { PUBLIC_API_URL } from '$env/static/public';
+
+// Only available on server
+import { DATABASE_URL } from '$env/static/private';
+```

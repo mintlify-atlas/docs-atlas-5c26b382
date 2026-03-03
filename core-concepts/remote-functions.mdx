@@ -1,0 +1,560 @@
+---
+title: Remote functions
+description: Type-safe communication between client and server with remote functions
+---
+
+<Note>
+Available since SvelteKit 2.27. This feature is experimental and subject to change without notice.
+</Note>
+
+Remote functions are a tool for type-safe communication between client and server. They can be **called** anywhere in your app, but always **run** on the server, meaning they can safely access server-only modules containing things like environment variables and database clients.
+
+## Enabling remote functions
+
+You must opt in by adding the `kit.experimental.remoteFunctions` option in your `svelte.config.js`:
+
+```js
+/// file: svelte.config.js
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+	kit: {
+		experimental: {
+			remoteFunctions: true
+		}
+	},
+	compilerOptions: {
+		experimental: {
+			async: true  // Optional: enables await in components
+		}
+	}
+};
+
+export default config;
+```
+
+## Overview
+
+Remote functions are exported from a `.remote.js` or `.remote.ts` file and come in four flavors:
+
+<CardGroup cols={2}>
+<Card title="query" icon="magnifying-glass">
+Read dynamic data from the server
+</Card>
+
+<Card title="form" icon="file-pen">
+Submit form data with progressive enhancement
+</Card>
+
+<Card title="command" icon="terminal">
+Write data to the server from anywhere
+</Card>
+
+<Card title="prerender" icon="bolt">
+Prerender static data at build time
+</Card>
+</CardGroup>
+
+<Note>
+On the client, exported functions are transformed to `fetch` wrappers that invoke their counterparts on the server via a generated HTTP endpoint.
+</Note>
+
+## query
+
+The `query` function allows you to read dynamic data from the server:
+
+<CodeGroup>
+```js Remote function
+/// file: src/routes/blog/data.remote.js
+import { query } from '$app/server';
+import * as db from '$lib/server/database';
+
+export const getPosts = query(async () => {
+	const posts = await db.sql`
+		SELECT title, slug
+		FROM post
+		ORDER BY published_at DESC
+	`;
+
+	return posts;
+});
+```
+
+```svelte Using in component
+<!--- file: src/routes/blog/+page.svelte --->
+<script>
+	import { getPosts } from './data.remote';
+</script>
+
+<h1>Recent posts</h1>
+
+<ul>
+	{#each await getPosts() as { title, slug }}
+		<li><a href="/blog/{slug}">{title}</a></li>
+	{/each}
+</ul>
+```
+</CodeGroup>
+
+<Tip>
+Until the promise resolves — and if it errors — the nearest `<svelte:boundary>` will be invoked.
+</Tip>
+
+### Query arguments
+
+Query functions can accept an argument. Use a Standard Schema validation library like Zod or Valibot to validate:
+
+```js
+/// file: src/routes/blog/data.remote.js
+import * as v from 'valibot';
+import { error } from '@sveltejs/kit';
+import { query } from '$app/server';
+import * as db from '$lib/server/database';
+
+export const getPost = query(v.string(), async (slug) => {
+	const [post] = await db.sql`
+		SELECT * FROM post
+		WHERE slug = ${slug}
+	`;
+
+	if (!post) error(404, 'Not found');
+	return post;
+});
+```
+
+Use it in your component:
+
+```svelte
+<!--- file: src/routes/blog/[slug]/+page.svelte --->
+<script>
+	import { getPost } from '../data.remote';
+
+	let { params } = $props();
+
+	const post = $derived(await getPost(params.slug));
+</script>
+
+<h1>{post.title}</h1>
+<div>{@html post.content}</div>
+```
+
+### Refreshing queries
+
+Any query can be re-fetched via its `refresh` method:
+
+```svelte
+<button onclick={() => getPosts().refresh()}>
+	Check for new posts
+</button>
+```
+
+<Note>
+Queries are cached while they're on the page, meaning `getPosts() === getPosts()`. You don't need a reference to update the query.
+</Note>
+
+## query.batch
+
+`query.batch` batches requests that happen within the same macrotask, solving the n+1 problem:
+
+```js
+/// file: weather.remote.js
+import * as v from 'valibot';
+import { query } from '$app/server';
+import * as db from '$lib/server/database';
+
+export const getWeather = query.batch(v.string(), async (cityIds) => {
+	const weather = await db.sql`
+		SELECT * FROM weather
+		WHERE city_id = ANY(${cityIds})
+	`;
+	const lookup = new Map(weather.map(w => [w.city_id, w]));
+
+	return (cityId) => lookup.get(cityId);
+});
+```
+
+Use it in your component:
+
+```svelte
+<!--- file: Weather.svelte --->
+<script>
+	import CityWeather from './CityWeather.svelte';
+	import { getWeather } from './weather.remote';
+
+	let { cities } = $props();
+	let limit = $state(5);
+</script>
+
+<h2>Weather</h2>
+
+{#each cities.slice(0, limit) as city}
+	<h3>{city.name}</h3>
+	<CityWeather weather={await getWeather(city.id)} />
+{/each}
+
+{#if cities.length > limit}
+	<button onclick={() => limit += 5}>
+		Load more
+	</button>
+{/if}
+```
+
+## form
+
+The `form` function makes it easy to write data to the server:
+
+<CodeGroup>
+```js Remote form
+/// file: src/routes/blog/data.remote.js
+import * as v from 'valibot';
+import { error, redirect } from '@sveltejs/kit';
+import { form } from '$app/server';
+import * as db from '$lib/server/database';
+import * as auth from '$lib/server/auth';
+
+export const createPost = form(
+	v.object({
+		title: v.pipe(v.string(), v.nonEmpty()),
+		content: v.pipe(v.string(), v.nonEmpty())
+	}),
+	async ({ title, content }) => {
+		const user = await auth.getUser();
+		if (!user) error(401, 'Unauthorized');
+
+		const slug = title.toLowerCase().replace(/ /g, '-');
+
+		await db.sql`
+			INSERT INTO post (slug, title, content)
+			VALUES (${slug}, ${title}, ${content})
+		`;
+
+		redirect(303, `/blog/${slug}`);
+	}
+);
+```
+
+```svelte Using the form
+<!--- file: src/routes/blog/new/+page.svelte --->
+<script>
+	import { createPost } from '../data.remote';
+</script>
+
+<h1>Create a new post</h1>
+
+<form {...createPost}>
+	<label>
+		<h2>Title</h2>
+		<input {...createPost.fields.title.as('text')} />
+	</label>
+
+	<label>
+		<h2>Write your post</h2>
+		<textarea {...createPost.fields.content.as('text')}></textarea>
+	</label>
+
+	<button>Publish!</button>
+</form>
+```
+</CodeGroup>
+
+<Note>
+The form object contains `method` and `action` properties that allow it to work without JavaScript. It also has an attachment that progressively enhances the form when JavaScript is available.
+</Note>
+
+### Fields
+
+A form is composed of fields defined by the schema. To get attributes for a field, call its `.as(...)` method:
+
+```svelte
+<form {...createPost}>
+	<label>
+		<h2>Title</h2>
+		<input {...createPost.fields.title.as('text')} />
+	</label>
+
+	<label>
+		<h2>Content</h2>
+		<textarea {...createPost.fields.content.as('text')}></textarea>
+	</label>
+
+	<button>Publish!</button>
+</form>
+```
+
+<Accordion title="Supported field types">
+Fields can be nested in objects and arrays, with values as:
+- Strings
+- Numbers
+- Booleans
+- File objects
+</Accordion>
+
+### Validation
+
+If submitted data doesn't pass the schema, each invalid field's `issues()` method returns error objects:
+
+```svelte
+<form {...createPost}>
+	<label>
+		<h2>Title</h2>
+
+		{#each createPost.fields.title.issues() as issue}
+			<p class="issue">{issue.message}</p>
+		{/each}
+
+		<input {...createPost.fields.title.as('text')} />
+	</label>
+
+	<!-- more fields -->
+
+	<button>Publish!</button>
+</form>
+```
+
+You can validate programmatically:
+
+```svelte
+<form {...createPost} oninput={() => createPost.validate()}>
+	<!-- fields -->
+</form>
+```
+
+### Single-flight mutations
+
+Specify which queries should be refreshed in response to a form submission:
+
+```js
+import { query, form } from '$app/server';
+
+export const getPosts = query(async () => { /* ... */ });
+
+export const createPost = form(
+	v.object({/* ... */}),
+	async (data) => {
+		// form logic...
+
+		// Refresh getPosts() on the server
+		await getPosts().refresh();
+
+		redirect(303, `/blog/${slug}`);
+	}
+);
+```
+
+### enhance
+
+Customize form submission behavior:
+
+```svelte
+<!--- file: src/routes/blog/new/+page.svelte --->
+<script>
+	import { createPost } from '../data.remote';
+	import { showToast } from '$lib/toast';
+</script>
+
+<form {...createPost.enhance(async ({ form, data, submit }) => {
+	try {
+		await submit();
+		form.reset();
+		showToast('Successfully published!');
+	} catch (error) {
+		showToast('Oh no! Something went wrong');
+	}
+})}>
+	<!-- fields -->
+</form>
+```
+
+## command
+
+The `command` function allows you to write data to the server from anywhere (unlike `form`, which is element-specific):
+
+<CodeGroup>
+```js Remote command
+/// file: likes.remote.js
+import * as v from 'valibot';
+import { query, command } from '$app/server';
+import * as db from '$lib/server/database';
+
+export const getLikes = query(v.string(), async (id) => {
+	const [row] = await db.sql`
+		SELECT likes FROM item WHERE id = ${id}
+	`;
+	return row.likes;
+});
+
+export const addLike = command(v.string(), async (id) => {
+	await db.sql`
+		UPDATE item
+		SET likes = likes + 1
+		WHERE id = ${id}
+	`;
+});
+```
+
+```svelte Using the command
+<!--- file: +page.svelte --->
+<script>
+	import { getLikes, addLike } from './likes.remote';
+	import { showToast } from '$lib/toast';
+
+	let { item } = $props();
+</script>
+
+<button
+	onclick={async () => {
+		try {
+			await addLike(item.id);
+		} catch (error) {
+			showToast('Something went wrong!');
+		}
+	}}
+>
+	add like
+</button>
+
+<p>likes: {await getLikes(item.id)}</p>
+```
+</CodeGroup>
+
+<Warning>
+Prefer `form` where possible, since it gracefully degrades if JavaScript is disabled or fails to load.
+</Warning>
+
+### Updating queries
+
+Tell SvelteKit which queries need to be refreshed:
+
+<Tabs>
+<Tab title="Inside command">
+```js
+export const addLike = command(v.string(), async (id) => {
+	await db.sql`UPDATE item SET likes = likes + 1 WHERE id = ${id}`;
+	getLikes(id).refresh();
+});
+```
+</Tab>
+
+<Tab title="When calling">
+```svelte
+<button
+	onclick={async () => {
+		try {
+			await addLike(item.id).updates(getLikes(item.id));
+		} catch (error) {
+			showToast('Something went wrong!');
+		}
+	}}
+>
+```
+</Tab>
+</Tabs>
+
+Use `withOverride` for optimistic updates:
+
+```svelte
+try {
+	await addLike(item.id).updates(
+		getLikes(item.id).withOverride((n) => n + 1)
+	);
+} catch (error) {
+	showToast('Something went wrong!');
+}
+```
+
+## prerender
+
+The `prerender` function is similar to `query`, except it's invoked at build time:
+
+```js
+/// file: src/routes/blog/data.remote.js
+import { prerender } from '$app/server';
+import * as db from '$lib/server/database';
+
+export const getPosts = prerender(async () => {
+	const posts = await db.sql`
+		SELECT title, slug
+		FROM post
+		ORDER BY published_at DESC
+	`;
+
+	return posts;
+});
+```
+
+<Note>
+Use this for data that changes at most once per redeployment. You can use `prerender` functions on pages that are otherwise dynamic, allowing for partial prerendering.
+</Note>
+
+### Prerender arguments
+
+Specify which values should be prerendered using the `inputs` option:
+
+```js
+import * as v from 'valibot';
+import { prerender } from '$app/server';
+
+export const getPost = prerender(
+	v.string(),
+	async (slug) => { /* ... */ },
+	{
+		inputs: () => [
+			'first-post',
+			'second-post',
+			'third-post'
+		]
+	}
+);
+```
+
+By default, prerender functions are excluded from your server bundle. Set `dynamic: true` to change this:
+
+```js
+export const getPost = prerender(
+	v.string(),
+	async (slug) => { /* ... */ },
+	{
+		dynamic: true,
+		inputs: () => ['first-post', 'second-post', 'third-post']
+	}
+);
+```
+
+## Using getRequestEvent
+
+Inside remote functions, use `getRequestEvent` to get the current `RequestEvent` object:
+
+```ts
+/// file: user.remote.ts
+import { getRequestEvent, query } from '$app/server';
+import { findUser } from '$lib/server/database';
+
+export const getProfile = query(async () => {
+	const user = await getUser();
+
+	return {
+		name: user.name,
+		avatar: user.avatar
+	};
+});
+
+const getUser = query(async () => {
+	const { cookies } = getRequestEvent();
+	return await findUser(cookies.get('session_id'));
+});
+```
+
+<Warning>
+Some properties of `RequestEvent` are different inside remote functions. Never use `route`, `params`, or `url` to determine user authorization.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+<Card title="Routing" icon="route" href="/core-concepts/routing">
+Learn about SvelteKit's routing system
+</Card>
+
+<Card title="Load functions" icon="download" href="/core-concepts/load">
+Fetch data for your pages
+</Card>
+</CardGroup>

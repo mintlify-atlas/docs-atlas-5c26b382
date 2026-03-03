@@ -1,0 +1,269 @@
+---
+title: Service workers
+description: Make your SvelteKit app work offline with service worker support
+---
+
+Service workers act as proxy servers that handle network requests inside your app. This makes it possible to make your app work offline and speed up navigation by precaching built assets.
+
+## Setup
+
+If you have a `src/service-worker.js` file (or `src/service-worker/index.js`), SvelteKit will bundle and automatically register it.
+
+<Note>
+  Service workers are bundled for production but not during development.
+</Note>
+
+### Automatic registration
+
+The default registration looks like this:
+
+```javascript
+if ('serviceWorker' in navigator) {
+	addEventListener('load', function () {
+		navigator.serviceWorker.register('./path/to/service-worker.js');
+	});
+}
+```
+
+### Custom registration
+
+You can [disable automatic registration](https://kit.svelte.dev/docs/configuration#serviceWorker) and register manually:
+
+```javascript
+import { dev } from '$app/environment';
+
+navigator.serviceWorker.register('/service-worker.js', {
+	type: dev ? 'module' : 'classic'
+});
+```
+
+<Warning>
+  During development, you must pass `type: 'module'` because only browsers that support modules in service workers can use them at dev time.
+</Warning>
+
+## Inside the service worker
+
+The `$service-worker` module provides access to:
+
+<ResponseField name="build" type="string[]">
+  Paths to all built app files
+</ResponseField>
+
+<ResponseField name="files" type="string[]">
+  Paths to all files in the `static` directory
+</ResponseField>
+
+<ResponseField name="prerendered" type="string[]">
+  Paths to all prerendered pages
+</ResponseField>
+
+<ResponseField name="version" type="string">
+  A unique app version string for creating cache names
+</ResponseField>
+
+<ResponseField name="base" type="string">
+  The deployment's base path
+</ResponseField>
+
+## Complete example
+
+This example caches the built app and static files eagerly, then caches other requests as they happen:
+
+```javascript src/service-worker.js
+// Type safety references
+/// <reference no-default-lib="true"/>
+/// <reference lib="esnext" />
+/// <reference lib="webworker" />
+/// <reference types="@sveltejs/kit" />
+/// <reference types="../.svelte-kit/ambient.d.ts" />
+
+import { build, files, version } from '$service-worker';
+
+const self = /** @type {ServiceWorkerGlobalScope} */ (/** @type {unknown} */ (globalThis.self));
+
+// Create a unique cache name for this deployment
+const CACHE = `cache-${version}`;
+
+const ASSETS = [
+	...build, // the app itself
+	...files  // everything in `static`
+];
+
+self.addEventListener('install', (event) => {
+	// Create a new cache and add all files to it
+	async function addFilesToCache() {
+		const cache = await caches.open(CACHE);
+		await cache.addAll(ASSETS);
+	}
+
+	event.waitUntil(addFilesToCache());
+});
+
+self.addEventListener('activate', (event) => {
+	// Remove previous cached data from disk
+	async function deleteOldCaches() {
+		for (const key of await caches.keys()) {
+			if (key !== CACHE) await caches.delete(key);
+		}
+	}
+
+	event.waitUntil(deleteOldCaches());
+});
+
+self.addEventListener('fetch', (event) => {
+	// ignore POST requests etc
+	if (event.request.method !== 'GET') return;
+
+	async function respond() {
+		const url = new URL(event.request.url);
+		const cache = await caches.open(CACHE);
+
+		// `build`/`files` can always be served from the cache
+		if (ASSETS.includes(url.pathname)) {
+			const response = await cache.match(url.pathname);
+
+			if (response) {
+				return response;
+			}
+		}
+
+		// for everything else, try the network first, but
+		// fall back to the cache if we're offline
+		try {
+			const response = await fetch(event.request);
+
+			// if we're offline, fetch can return a value that is not a Response
+			// instead of throwing - and we can't pass this non-Response to respondWith
+			if (!(response instanceof Response)) {
+				throw new Error('invalid response from fetch');
+			}
+
+			if (response.status === 200) {
+				cache.put(event.request, response.clone());
+			}
+
+			return response;
+		} catch (err) {
+			const response = await cache.match(event.request);
+
+			if (response) {
+				return response;
+			}
+
+			// if there's no cache, then just error out
+			// as there is nothing we can do to respond to this request
+			throw err;
+		}
+	}
+
+	event.respondWith(respond());
+});
+```
+
+<Steps>
+  <Step title="Install event">
+    Opens a cache and adds all static assets to it
+  </Step>
+  
+  <Step title="Activate event">
+    Removes old caches from previous deployments
+  </Step>
+  
+  <Step title="Fetch event">
+    Serves cached assets immediately, network resources with cache fallback
+  </Step>
+</Steps>
+
+## Caching strategies
+
+<AccordionGroup>
+  <Accordion title="Cache-first">
+    Check the cache first, fall back to network. Best for static assets.
+    
+    ```javascript
+    const response = await cache.match(request) || await fetch(request);
+    ```
+  </Accordion>
+  
+  <Accordion title="Network-first">
+    Try network first, fall back to cache if offline. Best for dynamic content.
+    
+    ```javascript
+    try {
+      const response = await fetch(request);
+      cache.put(request, response.clone());
+      return response;
+    } catch (err) {
+      return await cache.match(request);
+    }
+    ```
+  </Accordion>
+  
+  <Accordion title="Stale-while-revalidate">
+    Return cached response immediately while fetching fresh data in background.
+    
+    ```javascript
+    const cached = await cache.match(request);
+    const fresh = fetch(request).then(r => {
+      cache.put(request, r.clone());
+      return r;
+    });
+    return cached || fresh;
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+  Be careful when caching! In some cases, stale data might be worse than no data. Browsers will also empty caches if they get too full.
+</Warning>
+
+## Development considerations
+
+<Note>
+  During development:
+  - Service workers are not bundled
+  - `build` and `prerendered` are empty arrays
+  - Only browsers that support ES modules in service workers will work
+</Note>
+
+## Testing
+
+<Steps>
+  <Step title="Build your app">
+    ```bash
+    npm run build
+    ```
+  </Step>
+  
+  <Step title="Preview the build">
+    ```bash
+    npm run preview
+    ```
+  </Step>
+  
+  <Step title="Test offline">
+    Open DevTools → Network tab → Enable "Offline" mode
+  </Step>
+  
+  <Step title="Verify caching">
+    Open DevTools → Application tab → Service Workers / Cache Storage
+  </Step>
+</Steps>
+
+## Alternative solutions
+
+SvelteKit's service worker implementation is simple and effective, but you might prefer:
+
+<CardGroup cols={2}>
+  <Card title="Workbox" icon="toolbox" href="https://web.dev/learn/pwa/workbox">
+    Google's comprehensive PWA library with advanced caching strategies
+  </Card>
+  
+  <Card title="Vite PWA Plugin" icon="plug" href="https://vite-pwa-org.netlify.app/frameworks/sveltekit.html">
+    Workbox integration for Vite-based projects including SvelteKit
+  </Card>
+</CardGroup>
+
+<Card title="Learn more" icon="book" href="https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API/Using_Service_Workers">
+  MDN Web Docs: Using Service Workers
+</Card>

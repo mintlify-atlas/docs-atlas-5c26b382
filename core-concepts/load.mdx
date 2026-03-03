@@ -1,0 +1,479 @@
+---
+title: Loading data
+description: Learn how to fetch and manage data in SvelteKit using load functions
+---
+
+Before a `+page.svelte` component (and its containing `+layout.svelte` components) can be rendered, we often need to get some data. This is done by defining **load functions**.
+
+## Page data
+
+A `+page.svelte` file can have a sibling `+page.js` that exports a `load` function:
+
+<CodeGroup>
+```js Load function
+/// file: src/routes/blog/[slug]/+page.js
+/** @type {import('./$types').PageLoad} */
+export function load({ params }) {
+	return {
+		post: {
+			title: `Title for ${params.slug} goes here`,
+			content: `Content for ${params.slug} goes here`
+		}
+	};
+}
+```
+
+```svelte Using the data
+<!--- file: src/routes/blog/[slug]/+page.svelte --->
+<script>
+	/** @type {import('./$types').PageProps} */
+	let { data } = $props();
+</script>
+
+<h1>{data.post.title}</h1>
+<div>{@html data.post.content}</div>
+```
+</CodeGroup>
+
+<Tip>
+Thanks to the generated `$types` module, we get full type safety.
+</Tip>
+
+## Universal vs server load functions
+
+There are two types of `load` function:
+
+<Tabs>
+<Tab title="Universal load">
+**Files**: `+page.js` and `+layout.js`
+
+- Run both on the server and in the browser
+- Can return any values, including component constructors
+- Useful for fetching from external APIs
+
+```js
+/// file: src/routes/items/[id]/+page.js
+/** @type {import('./$types').PageLoad} */
+export async function load({ fetch, params }) {
+	const res = await fetch(`/api/items/${params.id}`);
+	const item = await res.json();
+
+	return { item };
+}
+```
+</Tab>
+
+<Tab title="Server load">
+**Files**: `+page.server.js` and `+layout.server.js`
+
+- Only run server-side
+- Can access databases and private environment variables
+- Must return serializable data
+
+```js
+/// file: src/routes/blog/[slug]/+page.server.js
+import * as db from '$lib/server/database';
+
+/** @type {import('./$types').PageServerLoad} */
+export async function load({ params }) {
+	return {
+		post: await db.getPost(params.slug)
+	};
+}
+```
+</Tab>
+</Tabs>
+
+### When does which load function run?
+
+<Steps>
+<Step title="Server load functions">
+Always run on the server.
+</Step>
+
+<Step title="Universal load functions">
+By default, run on the server during SSR when the user first visits your page. They will then run again during hydration, reusing any responses from fetch requests.
+</Step>
+
+<Step title="Concurrent execution">
+If a route contains both universal and server `load` functions, the server `load` runs first.
+</Step>
+</Steps>
+
+## Layout data
+
+Your `+layout.svelte` files can also load data via `+layout.js` or `+layout.server.js`:
+
+<CodeGroup>
+```js Layout load function
+/// file: src/routes/blog/[slug]/+layout.server.js
+import * as db from '$lib/server/database';
+
+/** @type {import('./$types').LayoutServerLoad} */
+export async function load() {
+	return {
+		posts: await db.getPostSummaries()
+	};
+}
+```
+
+```svelte Layout component
+<!--- file: src/routes/blog/[slug]/+layout.svelte --->
+<script>
+	/** @type {import('./$types').LayoutProps} */
+	let { data, children } = $props();
+</script>
+
+<main>
+	{@render children()}
+</main>
+
+<aside>
+	<h2>More posts</h2>
+	<ul>
+		{#each data.posts as post}
+			<li>
+				<a href="/blog/{post.slug}">
+					{post.title}
+				</a>
+			</li>
+		{/each}
+	</ul>
+</aside>
+```
+</CodeGroup>
+
+<Note>
+Data returned from layout `load` functions is available to child `+layout.svelte` components and the `+page.svelte` component.
+</Note>
+
+## Using URL data
+
+The `load` function provides access to URL information:
+
+<Accordion title="url">
+An instance of `URL`, containing properties like `origin`, `hostname`, `pathname` and `searchParams`:
+
+```js
+export function load({ url }) {
+	const query = url.searchParams.get('q');
+	// ...
+}
+```
+</Accordion>
+
+<Accordion title="route">
+Contains the name of the current route directory:
+
+```js
+/// file: src/routes/a/[b]/[...c]/+page.js
+export function load({ route }) {
+	console.log(route.id); // '/a/[b]/[...c]'
+}
+```
+</Accordion>
+
+<Accordion title="params">
+Derived from `url.pathname` and `route.id`:
+
+```js
+// Given route.id of '/a/[b]/[...c]' 
+// and url.pathname of '/a/x/y/z'
+export function load({ params }) {
+	console.log(params); // { b: 'x', c: 'y/z' }
+}
+```
+</Accordion>
+
+## Making fetch requests
+
+The provided `fetch` function has special features:
+
+<CardGroup cols={2}>
+<Card title="Credentialed requests" icon="cookie">
+Inherits `cookie` and `authorization` headers on the server
+</Card>
+
+<Card title="Relative requests" icon="link">
+Can make relative requests on the server
+</Card>
+
+<Card title="Direct routing" icon="rocket">
+Internal requests go directly to handler function
+</Card>
+
+<Card title="Response inlining" icon="file-code">
+Responses are captured and inlined into rendered HTML during SSR
+</Card>
+</CardGroup>
+
+```js
+/// file: src/routes/items/[id]/+page.js
+/** @type {import('./$types').PageLoad} */
+export async function load({ fetch, params }) {
+	const res = await fetch(`/api/items/${params.id}`);
+	const item = await res.json();
+
+	return { item };
+}
+```
+
+## Working with cookies
+
+A server `load` function can get and set cookies:
+
+```js
+/// file: src/routes/+layout.server.js
+import * as db from '$lib/server/database';
+
+/** @type {import('./$types').LayoutServerLoad} */
+export async function load({ cookies }) {
+	const sessionid = cookies.get('sessionid');
+
+	return {
+		user: await db.getUser(sessionid)
+	};
+}
+```
+
+<Warning>
+Cookies will only be passed through the provided `fetch` function if the target host is the same as the SvelteKit application or a more specific subdomain of it.
+</Warning>
+
+## Setting headers
+
+Both server and universal `load` functions have access to a `setHeaders` function:
+
+```js
+/// file: src/routes/products/+page.js
+/** @type {import('./$types').PageLoad} */
+export async function load({ fetch, setHeaders }) {
+	const url = `https://cms.example.com/products.json`;
+	const response = await fetch(url);
+
+	// Cache the page for the same length of time as the underlying data
+	setHeaders({
+		age: response.headers.get('age'),
+		'cache-control': response.headers.get('cache-control')
+	});
+
+	return response.json();
+}
+```
+
+<Note>
+Setting the same header multiple times is an error. You can only set a given header once using the `setHeaders` function.
+</Note>
+
+## Using parent data
+
+A `load` function can access data from a parent `load` function with `await parent()`:
+
+<Steps>
+<Step title="Root layout">
+```js
+/// file: src/routes/+layout.js
+export function load() {
+	return { a: 1 };
+}
+```
+</Step>
+
+<Step title="Child layout">
+```js
+/// file: src/routes/abc/+layout.js
+export async function load({ parent }) {
+	const { a } = await parent();
+	return { b: a + 1 };
+}
+```
+</Step>
+
+<Step title="Page">
+```js
+/// file: src/routes/abc/+page.js
+export async function load({ parent }) {
+	const { a, b } = await parent();
+	return { c: a + b };
+}
+```
+</Step>
+</Steps>
+
+<Warning>
+Take care not to introduce waterfalls when using `await parent()`. Call independent data fetches first to avoid delayed renders.
+</Warning>
+
+## Error handling
+
+If an error is thrown during `load`, the nearest `+error.svelte` will be rendered:
+
+```js
+/// file: src/routes/admin/+layout.server.js
+import { error } from '@sveltejs/kit';
+
+/** @type {import('./$types').LayoutServerLoad} */
+export function load({ locals }) {
+	if (!locals.user) {
+		error(401, 'not logged in');
+	}
+
+	if (!locals.user.isAdmin) {
+		error(403, 'not an admin');
+	}
+}
+```
+
+## Redirects
+
+To redirect users, use the `redirect` helper:
+
+```js
+/// file: src/routes/user/+layout.server.js
+import { redirect } from '@sveltejs/kit';
+
+/** @type {import('./$types').LayoutServerLoad} */
+export function load({ locals }) {
+	if (!locals.user) {
+		redirect(307, '/login');
+	}
+}
+```
+
+<Tip>
+In the browser, you can also navigate programmatically outside of a `load` function using `goto` from `$app/navigation`.
+</Tip>
+
+## Streaming with promises
+
+When using a server `load`, promises will be streamed to the browser as they resolve:
+
+```js
+/// file: src/routes/blog/[slug]/+page.server.js
+/** @type {import('./$types').PageServerLoad} */
+export async function load({ params }) {
+	return {
+		// Load comments without blocking post
+		comments: loadComments(params.slug),
+		post: await loadPost(params.slug)
+	};
+}
+```
+
+This enables skeleton loading states:
+
+```svelte
+<!--- file: src/routes/blog/[slug]/+page.svelte --->
+<script>
+	/** @type {import('./$types').PageProps} */
+	let { data } = $props();
+</script>
+
+<h1>{data.post.title}</h1>
+<div>{@html data.post.content}</div>
+
+{#await data.comments}
+	Loading comments...
+{:then comments}
+	{#each comments as comment}
+		<p>{comment.content}</p>
+	{/each}
+{:catch error}
+	<p>error loading comments: {error.message}</p>
+{/await}
+```
+
+<Warning>
+On platforms that do not support streaming (like AWS Lambda), responses will be buffered. The page will only render once all promises resolve.
+</Warning>
+
+## Rerunning load functions
+
+SvelteKit tracks dependencies to avoid rerunning `load` functions unnecessarily.
+
+### When do load functions rerun?
+
+A `load` function will rerun when:
+
+<Accordion title="Parameter changes">
+It references a property of `params` whose value has changed
+</Accordion>
+
+<Accordion title="URL changes">
+It references a property of `url` (like `url.pathname` or `url.search`) whose value has changed
+</Accordion>
+
+<Accordion title="Search params changes">
+It calls `url.searchParams.get(...)` and the parameter in question changes
+</Accordion>
+
+<Accordion title="Parent rerun">
+It calls `await parent()` and a parent `load` function reran
+</Accordion>
+
+<Accordion title="Manual invalidation">
+A URL it depends on was marked invalid with `invalidate(url)` or all functions were rerun with `invalidateAll()`
+</Accordion>
+
+### Manual invalidation
+
+You can rerun `load` functions using:
+
+<Tabs>
+<Tab title="invalidate()">
+```js
+import { invalidate } from '$app/navigation';
+
+// Reruns all load functions that depend on this URL
+invalidate('https://api.example.com/data');
+
+// Or use custom identifiers
+invalidate('app:data');
+```
+</Tab>
+
+<Tab title="invalidateAll()">
+```js
+import { invalidateAll } from '$app/navigation';
+
+// Reruns every load function
+invalidateAll();
+```
+</Tab>
+</Tabs>
+
+## Authentication implications
+
+Important considerations for auth checks:
+
+<Warning>
+Layout `load` functions do not run on every request during client-side navigation between child routes.
+</Warning>
+
+Recommended strategies:
+
+<Steps>
+<Step title="Use hooks">
+Protect multiple routes before any `load` functions run using server hooks
+</Step>
+
+<Step title="Page-level guards">
+Use auth guards directly in `+page.server.js` for route-specific protection
+</Step>
+
+<Step title="Avoid layout guards">
+Putting auth guards in `+layout.server.js` requires all child pages to call `await parent()` before protected code
+</Step>
+</Steps>
+
+## Next steps
+
+<CardGroup cols={2}>
+<Card title="Form actions" icon="file-pen" href="/core-concepts/form-actions">
+Learn how to handle form submissions
+</Card>
+
+<Card title="Page options" icon="sliders" href="/core-concepts/page-options">
+Configure rendering behavior for your pages
+</Card>
+</CardGroup>

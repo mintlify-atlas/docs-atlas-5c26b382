@@ -1,0 +1,440 @@
+---
+title: 'Configuration'
+description: 'SvelteKit configuration options in svelte.config.js'
+---
+
+Your SvelteKit project configuration lives in a `svelte.config.js` file at the root of your project. This config object is used by SvelteKit and other tooling that integrates with Svelte.
+
+## Basic Example
+
+```javascript
+// svelte.config.js
+import adapter from '@sveltejs/adapter-auto';
+
+export default {
+  kit: {
+    adapter: adapter()
+  }
+};
+```
+
+## Config
+
+<ParamField path="extensions" type="string[]" default='[".svelte"]'>
+  An array of file extensions that SvelteKit will treat as Svelte components.
+</ParamField>
+
+<ParamField path="kit" type="KitConfig">
+  SvelteKit-specific configuration options. See [KitConfig](#kitconfig) below.
+</ParamField>
+
+## KitConfig
+
+The `kit` property configures SvelteKit and can have the following properties:
+
+### Adapter
+
+<ParamField path="kit.adapter" type="Adapter" default="undefined">
+  Your adapter is run when executing `vite build`. It determines how the output is converted for different platforms.
+  
+  ```javascript
+  import adapter from '@sveltejs/adapter-auto';
+  
+  export default {
+    kit: {
+      adapter: adapter()
+    }
+  };
+  ```
+</ParamField>
+
+### Alias
+
+<ParamField path="kit.alias" type="Record<string, string>" default="{}">
+  An object containing zero or more aliases used to replace values in `import` statements. These aliases are automatically passed to Vite and TypeScript.
+  
+  ```javascript
+  export default {
+    kit: {
+      alias: {
+        '$components': 'src/lib/components',
+        '$utils': 'src/lib/utils'
+      }
+    }
+  };
+  ```
+  
+  <Note>Run `npm run dev` to have SvelteKit generate the required alias configuration in `jsconfig.json` or `tsconfig.json`.</Note>
+</ParamField>
+
+### App Directory
+
+<ParamField path="kit.appDir" type="string" default="_app">
+  The directory where SvelteKit keeps its stuff, including static assets (such as JS and CSS) and internally-used routes.
+  
+  If `paths.assets` is specified, there will be two app directories — `${paths.assets}/${appDir}` and `${paths.base}/${appDir}`.
+</ParamField>
+
+### CSP
+
+<ParamField path="kit.csp" type="object">
+  Content Security Policy configuration. CSP helps protect your users against cross-site scripting (XSS) attacks.
+  
+  ```javascript
+  export default {
+    kit: {
+      csp: {
+        mode: 'auto',
+        directives: {
+          'script-src': ['self']
+        },
+        reportOnly: {
+          'script-src': ['self'],
+          'report-uri': ['/']
+        }
+      }
+    }
+  };
+  ```
+  
+  <ParamField path="kit.csp.mode" type="'hash' | 'nonce' | 'auto'">
+    Whether to use hashes or nonces to restrict `<script>` and `<style>` elements. `'auto'` uses hashes for prerendered pages and nonces for dynamically rendered pages.
+  </ParamField>
+  
+  <ParamField path="kit.csp.directives" type="CspDirectives">
+    Directives that will be added to `Content-Security-Policy` headers.
+  </ParamField>
+  
+  <ParamField path="kit.csp.reportOnly" type="CspDirectives">
+    Directives that will be added to `Content-Security-Policy-Report-Only` headers.
+  </ParamField>
+</ParamField>
+
+### CSRF
+
+<ParamField path="kit.csrf" type="object">
+  Protection against cross-site request forgery (CSRF) attacks.
+  
+  <ParamField path="kit.csrf.checkOrigin" type="boolean" default="true">
+    Whether to check the incoming `origin` header for POST, PUT, PATCH, or DELETE form submissions.
+    
+    <Warning>Deprecated: Use `trustedOrigins: ['*']` instead. This option will be removed in a future version.</Warning>
+  </ParamField>
+  
+  <ParamField path="kit.csrf.trustedOrigins" type="string[]" default="[]">
+    An array of origins that are allowed to make cross-origin form submissions to your app.
+    
+    ```javascript
+    export default {
+      kit: {
+        csrf: {
+          trustedOrigins: [
+            'https://checkout.stripe.com',
+            'https://accounts.google.com'
+          ]
+        }
+      }
+    };
+    ```
+    
+    If the array contains `'*'`, all origins will be trusted (not recommended!).
+  </ParamField>
+</ParamField>
+
+### Embedded
+
+<ParamField path="kit.embedded" type="boolean" default="false">
+  Whether or not the app is embedded inside a larger app. If `true`, SvelteKit will add its event listeners on the parent of `%sveltekit.body%` instead of `window`.
+  
+  <Note>It is generally not supported to embed multiple SvelteKit apps on the same page.</Note>
+</ParamField>
+
+### Environment Variables
+
+<ParamField path="kit.env" type="object">
+  Environment variable configuration.
+  
+  <ParamField path="kit.env.dir" type="string" default=".">
+    The directory to search for `.env` files.
+  </ParamField>
+  
+  <ParamField path="kit.env.publicPrefix" type="string" default="PUBLIC_">
+    A prefix that signals that an environment variable is safe to expose to client-side code.
+    
+    ```javascript
+    export default {
+      kit: {
+        env: {
+          publicPrefix: 'PUBLIC_'
+        }
+      }
+    };
+    ```
+    
+    See [$env/static/public](/api/env-static-public) and [$env/dynamic/public](/api/env-dynamic-public).
+  </ParamField>
+  
+  <ParamField path="kit.env.privatePrefix" type="string" default="">
+    A prefix that signals that an environment variable is unsafe to expose to client-side code. Variables matching neither the public nor private prefix will be discarded.
+    
+    See [$env/static/private](/api/env-static-private) and [$env/dynamic/private](/api/env-dynamic-private).
+  </ParamField>
+</ParamField>
+
+### Inline Style Threshold
+
+<ParamField path="kit.inlineStyleThreshold" type="number" default="0">
+  Inline CSS inside a `<style>` block at the head of the HTML. This value specifies the maximum length of a CSS file in UTF-16 code units to be inlined.
+  
+  <Note>This results in fewer initial requests but generates larger HTML output and reduces browser cache effectiveness. Use advisedly.</Note>
+</ParamField>
+
+### Module Extensions
+
+<ParamField path="kit.moduleExtensions" type="string[]" default='[".js", ".ts"]'>
+  An array of file extensions that SvelteKit will treat as modules. Files with extensions that match neither `config.extensions` nor `config.kit.moduleExtensions` will be ignored by the router.
+</ParamField>
+
+### Output Directory
+
+<ParamField path="kit.outDir" type="string" default=".svelte-kit">
+  The directory that SvelteKit writes files to during `dev` and `build`. You should exclude this directory from version control.
+</ParamField>
+
+### Output
+
+<ParamField path="kit.output" type="object">
+  Options related to the build output format.
+  
+  <ParamField path="kit.output.preloadStrategy" type="'modulepreload' | 'preload-js' | 'preload-mjs'" default="modulepreload">
+    SvelteKit will preload the JavaScript modules needed for the initial page to avoid import 'waterfalls'.
+    
+    - `modulepreload` - uses `<link rel="modulepreload">`. Best results in Chromium, Firefox 115+, and Safari 17+.
+    - `preload-js` - uses `<link rel="preload">`. Prevents waterfalls but Chromium parses modules twice.
+    - `preload-mjs` - uses `<link rel="preload">` with `.mjs` extension to prevent double-parsing.
+  </ParamField>
+  
+  <ParamField path="kit.output.bundleStrategy" type="'split' | 'single' | 'inline'" default="split">
+    How JavaScript and CSS files are loaded.
+    
+    - `'split'` - Splits the app into multiple .js/.css files loaded lazily (recommended)
+    - `'single'` - Creates one .js bundle and one .css file for the entire app
+    - `'inline'` - Inlines all JavaScript and CSS into the HTML (usable without a server)
+  </ParamField>
+</ParamField>
+
+### Paths
+
+<ParamField path="kit.paths" type="object">
+  Path configuration for your app.
+  
+  <ParamField path="kit.paths.base" type="string" default="">
+    A root-relative path that must start, but not end with `/` (e.g. `/base-path`). Specifies where your app is served from.
+    
+    ```javascript
+    export default {
+      kit: {
+        paths: {
+          base: '/my-app'
+        }
+      }
+    };
+    ```
+    
+    Use `base` from `$app/paths` in your links: `<a href="{base}/page">Link</a>`.
+  </ParamField>
+  
+  <ParamField path="kit.paths.assets" type="string" default="">
+    An absolute path that your app's files are served from. Useful if files are served from a storage bucket.
+    
+    ```javascript
+    export default {
+      kit: {
+        paths: {
+          assets: 'https://cdn.example.com'
+        }
+      }
+    };
+    ```
+  </ParamField>
+  
+  <ParamField path="kit.paths.relative" type="boolean" default="true">
+    Whether to use relative asset paths.
+    
+    If `true`, `base` and `assets` imported from `$app/paths` will be replaced with relative asset paths during server-side rendering.
+    
+    Set to `false` if your app uses a `<base>` element.
+  </ParamField>
+</ParamField>
+
+### Prerender
+
+<ParamField path="kit.prerender" type="object">
+  Prerendering configuration. See [Prerendering](https://svelte.dev/docs/kit/page-options#prerender).
+  
+  <ParamField path="kit.prerender.concurrency" type="number" default="1">
+    How many pages can be prerendered simultaneously.
+  </ParamField>
+  
+  <ParamField path="kit.prerender.crawl" type="boolean" default="true">
+    Whether SvelteKit should find pages to prerender by following links from `entries`.
+  </ParamField>
+  
+  <ParamField path="kit.prerender.entries" type="Array<'*' | `/${string}`>" default='["*"]'>
+    An array of pages to prerender, or start crawling from. The `*` string includes all routes with no required parameters.
+  </ParamField>
+  
+  <ParamField path="kit.prerender.handleHttpError" type="'fail' | 'warn' | 'ignore' | Function" default="fail">
+    How to respond to HTTP errors encountered while prerendering.
+    
+    ```javascript
+    export default {
+      kit: {
+        prerender: {
+          handleHttpError: ({ path, referrer, message }) => {
+            if (path === '/not-found' && referrer === '/blog') {
+              return;
+            }
+            throw new Error(message);
+          }
+        }
+      }
+    };
+    ```
+  </ParamField>
+  
+  <ParamField path="kit.prerender.origin" type="string" default="http://sveltekit-prerender">
+    The value of `url.origin` during prerendering; useful if it is included in rendered content.
+  </ParamField>
+</ParamField>
+
+### Router
+
+<ParamField path="kit.router" type="object">
+  Router configuration.
+  
+  <ParamField path="kit.router.type" type="'pathname' | 'hash'" default="pathname">
+    What type of client-side router to use.
+    
+    - `'pathname'` - Current URL pathname determines the route (default)
+    - `'hash'` - Route determined by `location.hash` (disables SSR and prerendering)
+  </ParamField>
+  
+  <ParamField path="kit.router.resolution" type="'client' | 'server'" default="client">
+    How to determine which route to load when navigating.
+    
+    - `'client'` - Use manifest loaded upfront (faster navigation, larger initial load)
+    - `'server'` - Ask server for each navigation (smaller initial load, hidden route list)
+  </ParamField>
+</ParamField>
+
+### Service Worker
+
+<ParamField path="kit.serviceWorker" type="object">
+  Service worker configuration.
+  
+  <ParamField path="kit.serviceWorker.register" type="boolean" default="true">
+    Whether to automatically register the service worker, if it exists.
+  </ParamField>
+  
+  <ParamField path="kit.serviceWorker.files" type="(filename: string) => boolean" default="(filename) => !/\.DS_Store/.test(filename)">
+    Determine which files in your `static` directory will be available in `$service-worker.files`.
+  </ParamField>
+</ParamField>
+
+### TypeScript
+
+<ParamField path="kit.typescript" type="object">
+  TypeScript configuration.
+  
+  <ParamField path="kit.typescript.config" type="(config: Record<string, any>) => Record<string, any> | void" default="(config) => config">
+    A function that allows you to edit the generated `tsconfig.json`. You can mutate the config or return a new one.
+    
+    ```javascript
+    export default {
+      kit: {
+        typescript: {
+          config: (config) => {
+            config.extends = '../tsconfig.base.json';
+            return config;
+          }
+        }
+      }
+    };
+    ```
+  </ParamField>
+</ParamField>
+
+### Version
+
+<ParamField path="kit.version" type="object">
+  Client-side navigation can be buggy if you deploy a new version while people are using it. SvelteKit helps solve this through version management.
+  
+  <ParamField path="kit.version.name" type="string" default="Date.now().toString()">
+    The current app version string. This must be deterministic (e.g. a commit ref rather than `Math.random()`).
+    
+    ```javascript
+    import { execSync } from 'node:child_process';
+    
+    export default {
+      kit: {
+        version: {
+          name: execSync('git rev-parse HEAD').toString().trim()
+        }
+      }
+    };
+    ```
+  </ParamField>
+  
+  <ParamField path="kit.version.pollInterval" type="number" default="0">
+    The interval in milliseconds to poll for version changes. If `0`, no polling occurs.
+  </ParamField>
+</ParamField>
+
+## Complete Example
+
+```javascript
+// svelte.config.js
+import adapter from '@sveltejs/adapter-auto';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+export default {
+  preprocess: vitePreprocess(),
+  
+  kit: {
+    adapter: adapter(),
+    
+    alias: {
+      '$components': 'src/lib/components',
+      '$utils': 'src/lib/utils'
+    },
+    
+    env: {
+      publicPrefix: 'PUBLIC_',
+      privatePrefix: 'PRIVATE_'
+    },
+    
+    paths: {
+      base: '/my-app'
+    },
+    
+    prerender: {
+      entries: ['*'],
+      crawl: true
+    },
+    
+    csp: {
+      mode: 'auto',
+      directives: {
+        'script-src': ['self']
+      }
+    }
+  }
+};
+```
+
+## See Also
+
+- [Adapters](https://svelte.dev/docs/kit/adapters)
+- [Environment Variables](/api/env-static-public)
+- [TypeScript Types](/api/types)

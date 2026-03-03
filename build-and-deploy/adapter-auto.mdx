@@ -1,0 +1,156 @@
+---
+title: adapter-auto
+description: Automatically detect your deployment environment and use the appropriate adapter
+---
+
+The `@sveltejs/adapter-auto` adapter automatically detects your production environment and selects the appropriate adapter for deployment.
+
+## Installation
+
+```bash
+npm install -D @sveltejs/adapter-auto
+```
+
+## Usage
+
+Add the adapter to your `svelte.config.js`:
+
+```javascript
+/// file: svelte.config.js
+import adapter from '@sveltejs/adapter-auto';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+  kit: {
+    adapter: adapter()
+  }
+};
+
+export default config;
+```
+
+## How it works
+
+When you build your app, `adapter-auto` detects the environment by checking for specific environment variables and installs the appropriate adapter automatically:
+
+<Steps>
+  <Step title="Environment detection">
+    Checks for platform-specific environment variables (e.g., `VERCEL`, `CF_PAGES`, `NETLIFY`)
+  </Step>
+  
+  <Step title="Adapter installation">
+    Automatically installs the detected adapter if not already present
+  </Step>
+  
+  <Step title="Build execution">
+    Runs the selected adapter to generate platform-specific output
+  </Step>
+</Steps>
+
+## Supported environments
+
+The adapter automatically detects and supports the following platforms:
+
+<CodeGroup>
+```javascript Vercel
+// Detects: process.env.VERCEL
+// Installs: @sveltejs/adapter-vercel
+```
+
+```javascript Cloudflare Pages
+// Detects: process.env.CF_PAGES
+// Installs: @sveltejs/adapter-cloudflare
+```
+
+```javascript Netlify
+// Detects: process.env.NETLIFY
+// Installs: @sveltejs/adapter-netlify
+```
+
+```javascript Google Cloud Run
+// Detects: process.env.GCP_BUILDPACKS
+// Installs: @sveltejs/adapter-node
+```
+</CodeGroup>
+
+Refer to the adapter source code for the complete list:
+
+```javascript
+/// file: packages/adapter-auto/adapters.js
+export const adapters = [
+  {
+    name: 'Vercel',
+    test: () => !!process.env.VERCEL,
+    module: '@sveltejs/adapter-vercel',
+    version: '6'
+  },
+  {
+    name: 'Cloudflare Pages',
+    test: () => !!process.env.CF_PAGES,
+    module: '@sveltejs/adapter-cloudflare',
+    version: '7'
+  },
+  {
+    name: 'Netlify',
+    test: () => !!process.env.NETLIFY,
+    module: '@sveltejs/adapter-netlify',
+    version: '6'
+  }
+  // ... additional adapters
+];
+```
+
+## When to use adapter-auto
+
+<Note>
+**Good for:** Quick starts, prototyping, and projects that deploy to a single, well-known platform.
+
+**Not ideal for:** Production apps where you want explicit control over deployment configuration or need to customize adapter options.
+</Note>
+
+## Replacing adapter-auto
+
+For production deployments, consider replacing `adapter-auto` with a specific adapter:
+
+```javascript
+/// file: svelte.config.js
+// Before
+import adapter from '@sveltejs/adapter-auto';
+
+// After - for Vercel
+import adapter from '@sveltejs/adapter-vercel';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+  kit: {
+    adapter: adapter({
+      // Now you can configure adapter-specific options
+      runtime: 'nodejs24.x',
+      regions: ['iad1']
+    })
+  }
+};
+
+export default config;
+```
+
+<Tip>
+When you build with `adapter-auto`, it will warn you and suggest which adapter to use for your detected environment.
+</Tip>
+
+## Limitations
+
+Certain features are not available with `adapter-auto` because it cannot determine environment capabilities:
+
+```javascript
+// These will throw errors with adapter-auto:
+import { read } from '$app/server';
+
+// Error: "The read function imported from $app/server only works 
+// in certain environments. Since you're using @sveltejs/adapter-auto, 
+// SvelteKit cannot determine whether it will work when your app is deployed."
+```
+
+<Warning>
+If your app uses `read` from `$app/server` or `instrumentation.server.js`, you must use a specific adapter instead of `adapter-auto`.
+</Warning>

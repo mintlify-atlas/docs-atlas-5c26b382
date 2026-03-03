@@ -1,0 +1,212 @@
+---
+title: '$env/static/public'
+description: 'Static client-accessible environment variables'
+---
+
+The `$env/static/public` module provides access to public environment variables that are replaced at build time and can be accessed on both the client and server. These variables must be prefixed with `PUBLIC_` by default.
+
+## Usage
+
+```javascript
+import { PUBLIC_VARIABLE_NAME } from '$env/static/public';
+```
+
+<Note>
+  This module can be imported anywhere - in both client-side and server-side code.
+</Note>
+
+## Static Replacement
+
+Static public variables are replaced at build time. For example:
+
+```javascript
+import { PUBLIC_API_URL } from '$env/static/public';
+
+fetch(PUBLIC_API_URL);
+```
+
+Becomes (after build):
+
+```javascript
+fetch('https://api.example.com');
+```
+
+## Example: Component
+
+```svelte
+<!-- src/routes/+page.svelte -->
+<script>
+  import { PUBLIC_SITE_NAME, PUBLIC_API_URL } from '$env/static/public';
+</script>
+
+<h1>Welcome to {PUBLIC_SITE_NAME}</h1>
+<p>API endpoint: {PUBLIC_API_URL}</p>
+```
+
+## Example: API Client
+
+```javascript
+// src/lib/api.js
+import { PUBLIC_API_URL, PUBLIC_API_VERSION } from '$env/static/public';
+
+export async function fetchData(endpoint) {
+  const response = await fetch(
+    `${PUBLIC_API_URL}/v${PUBLIC_API_VERSION}/${endpoint}`
+  );
+  return response.json();
+}
+```
+
+## Example: Configuration
+
+```svelte
+<!-- src/routes/+layout.svelte -->
+<script>
+  import { PUBLIC_ANALYTICS_ID, PUBLIC_SITE_NAME } from '$env/static/public';
+  import { onMount } from 'svelte';
+  
+  onMount(() => {
+    // Initialize analytics with public ID
+    if (PUBLIC_ANALYTICS_ID) {
+      window.gtag('config', PUBLIC_ANALYTICS_ID);
+    }
+  });
+</script>
+
+<svelte:head>
+  <title>{PUBLIC_SITE_NAME}</title>
+</svelte:head>
+
+<slot />
+```
+
+## Example: Feature Flags
+
+```javascript
+// src/lib/features.js
+import { PUBLIC_ENABLE_BETA_FEATURES } from '$env/static/public';
+
+export const betaFeaturesEnabled = PUBLIC_ENABLE_BETA_FEATURES === 'true';
+
+export function useBetaFeature(feature) {
+  return betaFeaturesEnabled && feature.enabled;
+}
+```
+
+## Configuration
+
+Configure the public prefix in your `svelte.config.js`:
+
+```javascript
+// svelte.config.js
+export default {
+  kit: {
+    env: {
+      publicPrefix: 'PUBLIC_'
+    }
+  }
+};
+```
+
+Only variables starting with `PUBLIC_` will be available and exposed to browsers.
+
+## Setting Public Environment Variables
+
+Create a `.env` file in your project root:
+
+```bash
+# .env
+PUBLIC_API_URL=https://api.example.com
+PUBLIC_SITE_NAME=My SvelteKit App
+PUBLIC_ANALYTICS_ID=UA-XXXXXXXXX
+PUBLIC_ENABLE_BETA_FEATURES=false
+```
+
+Or set them when building:
+
+```bash
+PUBLIC_API_URL=https://api.prod.com npm run build
+```
+
+## When to Use Static vs Dynamic
+
+<CardGroup cols={2}>
+  <Card title="Use Static" icon="lock">
+    - Build-time constants that don't change
+    - Better performance (inlined at build time)
+    - Type-safe access with TypeScript
+    - Enables dead code elimination
+  </Card>
+  
+  <Card title="Use Dynamic" icon="arrows-rotate">
+    - Values that change between deployments
+    - Different values per environment
+    - Runtime configuration
+    - A/B testing configurations
+  </Card>
+</CardGroup>
+
+## TypeScript Support
+
+SvelteKit automatically generates types for your static public environment variables:
+
+```typescript
+// TypeScript provides autocomplete and type checking
+import { PUBLIC_API_URL, PUBLIC_SITE_NAME } from '$env/static/public';
+
+// Both are typed as string
+const url: string = PUBLIC_API_URL;
+const name: string = PUBLIC_SITE_NAME;
+```
+
+Types are generated in `.svelte-kit/ambient.d.ts` based on your `.env` file.
+
+## Performance Benefits
+
+Static public variables offer several advantages:
+
+1. **Zero runtime overhead** - Values are inlined during build
+2. **Better tree-shaking** - Unused imports can be eliminated
+3. **Smaller bundles** - No need to ship environment variable runtime
+4. **Faster execution** - No object property lookup
+
+## Build-Time Substitution
+
+During build, SvelteKit:
+
+1. Reads all `PUBLIC_*` environment variables
+2. Generates TypeScript types
+3. Replaces imports with actual string values
+4. Optimizes the code (tree-shaking, minification)
+
+```javascript
+// Before build
+import { PUBLIC_API_URL } from '$env/static/public';
+const url = PUBLIC_API_URL;
+
+// After build (optimized)
+const url = 'https://api.example.com';
+```
+
+## Security Warning
+
+<Warning>
+  **Never put secrets in public environment variables!**
+  
+  All `PUBLIC_*` variables are embedded in your client-side JavaScript bundle and can be viewed by anyone. Use `$env/static/private` or `$env/dynamic/private` for sensitive data.
+</Warning>
+
+## Common Use Cases
+
+- **API endpoints** - `PUBLIC_API_URL`
+- **Analytics IDs** - `PUBLIC_ANALYTICS_ID`
+- **Feature flags** - `PUBLIC_ENABLE_FEATURE_X`
+- **Site metadata** - `PUBLIC_SITE_NAME`, `PUBLIC_SITE_URL`
+- **CDN URLs** - `PUBLIC_CDN_URL`
+- **Map API keys** - `PUBLIC_MAPBOX_KEY` (public keys only!)
+
+## See Also
+
+- [\$env/dynamic/public](/api/env-dynamic-public) - Dynamic public environment variables
+- [\$env/static/private](/api/env-static-private) - Static server-only environment variables
+- [Configuration](/api/configuration) - Environment variable configuration options

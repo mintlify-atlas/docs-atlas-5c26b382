@@ -1,0 +1,275 @@
+---
+title: adapter-static
+description: Generate a static site from your SvelteKit app
+---
+
+The `@sveltejs/adapter-static` adapter prerenders your entire site as a collection of static files.
+
+## Installation
+
+```bash
+npm install -D @sveltejs/adapter-static
+```
+
+## Usage
+
+<Steps>
+  <Step title="Install the adapter">
+    Add it to your `svelte.config.js`:
+    
+    ```javascript
+    /// file: svelte.config.js
+    import adapter from '@sveltejs/adapter-static';
+    
+    export default {
+      kit: {
+        adapter: adapter({
+          pages: 'build',
+          assets: 'build',
+          fallback: undefined,
+          precompress: false,
+          strict: true
+        })
+      }
+    };
+    ```
+  </Step>
+  
+  <Step title="Make all routes prerenderable">
+    Add `export const prerender = true` to your root layout:
+    
+    ```javascript
+    /// file: src/routes/+layout.js
+    export const prerender = true;
+    ```
+  </Step>
+</Steps>
+
+## Configuration options
+
+From the adapter type definitions:
+
+```typescript
+/// file: packages/adapter-static/index.d.ts
+export interface AdapterOptions {
+  pages?: string;      // Output directory for pages
+  assets?: string;     // Output directory for assets
+  fallback?: string;   // SPA fallback page
+  precompress?: boolean;  // Enable compression
+  strict?: boolean;    // Enforce full prerendering
+}
+```
+
+### pages
+
+The directory to write prerendered pages to. Defaults to `'build'`.
+
+```javascript
+adapter({
+  pages: 'public'
+})
+```
+
+### assets
+
+The directory to write static assets to. Defaults to the same directory as `pages`.
+
+```javascript
+adapter({
+  pages: 'public/pages',
+  assets: 'public/assets'
+})
+```
+
+### fallback
+
+Specify a fallback page for single-page app (SPA) mode. This is useful if you have dynamic routes that can't be prerendered.
+
+```javascript
+adapter({
+  fallback: 'index.html'  // Creates a SPA
+})
+```
+
+The fallback page will be generated and used for any route that doesn't match a prerendered page:
+
+```javascript
+/// file: packages/adapter-static/index.js
+if (fallback) {
+  await builder.generateFallback(path.join(pages, fallback));
+}
+```
+
+<Warning>
+When using a fallback page, you should configure your deployment platform to serve it for 404s. Otherwise, your app won't work for client-side navigation.
+</Warning>
+
+### precompress
+
+Enables precompression of static files using gzip and brotli.
+
+```javascript
+adapter({
+  precompress: true
+})
+```
+
+From the implementation:
+
+```javascript
+/// file: packages/adapter-static/index.js
+if (precompress) {
+  builder.log.minor('Compressing assets and pages');
+  if (pages === assets) {
+    await builder.compress(assets);
+  } else {
+    await Promise.all([builder.compress(assets), builder.compress(pages)]);
+  }
+}
+```
+
+### strict
+
+By default, `adapter-static` checks that all routes are prerenderable. Set to `false` to disable this check.
+
+```javascript
+adapter({
+  strict: false  // Allow some routes to not be prerendered
+})
+```
+
+<Note>
+If `strict` is `false`, any non-prerendered routes will be unavailable in the final build.
+</Note>
+
+## Prerendering all routes
+
+You have several options to make all routes prerenderable:
+
+<CodeGroup>
+```javascript Root layout
+/// file: src/routes/+layout.js
+export const prerender = true;
+```
+
+```javascript Individual route
+/// file: src/routes/about/+page.js
+export const prerender = true;
+```
+
+```javascript Config option
+/// file: svelte.config.js
+export default {
+  kit: {
+    prerender: {
+      entries: ['*']
+    }
+  }
+};
+```
+</CodeGroup>
+
+## Error handling
+
+The adapter will fail the build if it encounters dynamic routes that cannot be prerendered:
+
+```javascript
+/// file: packages/adapter-static/index.js
+if (dynamic_routes.length > 0 && options?.strict !== false) {
+  builder.log.error(
+    `@sveltejs/adapter-static: all routes must be fully prerenderable, 
+    but found the following routes that are dynamic:
+    ${dynamic_routes.map((route) => `  - ${route.id}`).join('\n')}`
+  );
+  throw new Error('Encountered dynamic routes');
+}
+```
+
+<Warning>
+If you have routes with parameters like `/blog/[slug]`, you must either:
+- Add them to `prerender.entries` in your config
+- Add `export const prerender = true` and a `load` function that returns all possible parameter values
+- Set `strict: false` (not recommended)
+</Warning>
+
+## Platform-specific zero-config mode
+
+Some platforms are automatically detected, and the adapter will use optimized defaults:
+
+```javascript
+/// file: packages/adapter-static/index.js
+const platform = platforms.find((platform) => platform.test());
+
+if (platform) {
+  if (options) {
+    builder.log.warn(
+      `Detected ${platform.name}. Please remove adapter-static 
+      options to enable zero-config mode`
+    );
+  } else {
+    builder.log.info(`Detected ${platform.name}, using zero-config mode`);
+  }
+}
+```
+
+## Single-page apps (SPAs)
+
+To create a SPA where all routes are handled client-side:
+
+```javascript
+/// file: svelte.config.js
+import adapter from '@sveltejs/adapter-static';
+
+export default {
+  kit: {
+    adapter: adapter({
+      fallback: 'index.html'
+    }),
+    // Hash-based routing for SPAs without server support
+    router: {
+      type: 'hash'
+    }
+  }
+};
+```
+
+<Tip>
+For SPAs, configure your web server to serve `index.html` for all routes. Most static hosts have this built in.
+</Tip>
+
+## Deployment
+
+After building, the output directory contains only static files:
+
+```
+build/
+├── index.html
+├── about.html
+├── _app/
+│   ├── immutable/
+│   │   ├── chunks/
+│   │   ├── entry/
+│   │   └── nodes/
+│   └── version.json
+└── favicon.png
+```
+
+You can deploy this directory to any static hosting service:
+
+<CodeGroup>
+```bash Netlify
+netlify deploy --prod --dir=build
+```
+
+```bash Vercel
+vercel --prod
+```
+
+```bash GitHub Pages
+gh-pages -d build
+```
+
+```bash Cloudflare Pages
+wrangler pages deploy build
+```
+</CodeGroup>

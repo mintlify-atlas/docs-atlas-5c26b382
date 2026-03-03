@@ -1,0 +1,332 @@
+---
+title: Project structure
+description: Learn about the files and folders that make up a SvelteKit project
+---
+
+A typical SvelteKit project looks like this:
+
+```tree
+my-project/
+├ src/
+│ ├ lib/
+│ │ ├ server/
+│ │ │ └ [your server-only lib files]
+│ │ └ [your lib files]
+│ ├ params/
+│ │ └ [your param matchers]
+│ ├ routes/
+│ │ └ [your routes]
+│ ├ app.html
+│ ├ error.html
+│ ├ hooks.client.js
+│ ├ hooks.server.js
+│ ├ service-worker.js
+│ └ instrumentation.server.js
+├ static/
+│ └ [your static assets]
+├ tests/
+│ └ [your tests]
+├ package.json
+├ svelte.config.js
+├ tsconfig.json
+└ vite.config.js
+```
+
+You'll also find common files like `.gitignore` and `.npmrc` (and `.prettierrc` and `eslint.config.js` if you chose those options when running `npx sv create`).
+
+## Project files
+
+### src
+
+The `src` directory contains the core of your project. Everything except `src/routes` and `src/app.html` is optional.
+
+<Accordion title="lib - Library code">
+Contains your library code (utilities and components), which can be imported via the `$lib` alias, or packaged up for distribution using `svelte-package`.
+
+```javascript
+import { myUtility } from '$lib/utils';
+import MyComponent from '$lib/components/MyComponent.svelte';
+```
+
+<Tip>
+The `$lib` alias automatically resolves to `src/lib`, making imports cleaner and more portable.
+</Tip>
+</Accordion>
+
+<Accordion title="lib/server - Server-only code">
+Contains your server-only library code. It can be imported by using the `$lib/server` alias. SvelteKit will prevent you from importing these in client code.
+
+```javascript
+import { db } from '$lib/server/database';
+```
+
+<Warning>
+Attempting to import `$lib/server` modules in client code will cause a build error. This prevents accidentally leaking sensitive server-side code to the browser.
+</Warning>
+</Accordion>
+
+<Accordion title="params - Route param matchers">
+Contains param matchers for advanced routing. These allow you to validate route parameters.
+
+```javascript src/params/uuid.js
+/** @type {import('@sveltejs/kit').ParamMatcher} */
+export function match(param) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(param);
+}
+```
+
+Use in routes like: `src/routes/user/[id=uuid]/+page.svelte`
+</Accordion>
+
+<Accordion title="routes - Your application routes">
+Contains the routes of your application. You can also colocate other components that are only used within a single route here.
+
+Routes are determined by the file structure:
+
+- `+page.svelte` — A page component
+- `+page.js` — Universal load function
+- `+page.server.js` — Server-only load function and actions
+- `+layout.svelte` — Layout component
+- `+layout.js` — Layout load function
+- `+server.js` — API endpoint
+- `+error.svelte` — Error page
+
+See the [routing documentation](/core-concepts/routing) for more details.
+</Accordion>
+
+<Accordion title="app.html - Page template">
+Your page template — an HTML document containing placeholders:
+
+```html src/app.html
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" type="image/png" href="%sveltekit.assets%/favicon.png" />
+    %sveltekit.head%
+  </head>
+  <body>
+    <div>%sveltekit.body%</div>
+  </body>
+</html>
+```
+
+**Available placeholders:**
+
+- `%sveltekit.head%` — `<link>` and `<script>` elements, plus any `<svelte:head>` content
+- `%sveltekit.body%` — the markup for a rendered page
+- `%sveltekit.assets%` — the configured assets path
+- `%sveltekit.nonce%` — a CSP nonce for manually included links and scripts
+- `%sveltekit.env.[NAME]%` — environment variables beginning with the public prefix
+- `%sveltekit.version%` — the app version
+
+<Warning>
+The body placeholder should live inside a `<div>` or other element, rather than directly inside `<body>`, to prevent bugs caused by browser extensions injecting elements.
+</Warning>
+</Accordion>
+
+<Accordion title="error.html - Error page fallback">
+The page that is rendered when everything else fails. It can contain the following placeholders:
+
+```html src/error.html
+<!doctype html>
+<html>
+  <head>
+    <title>%sveltekit.status%</title>
+  </head>
+  <body>
+    <h1>%sveltekit.status%</h1>
+    <p>%sveltekit.error.message%</p>
+  </body>
+</html>
+```
+
+- `%sveltekit.status%` — the HTTP status
+- `%sveltekit.error.message%` — the error message
+</Accordion>
+
+<Accordion title="hooks.client.js - Client hooks">
+Contains your client-side hooks. These run in the browser:
+
+```javascript src/hooks.client.js
+/** @type {import('@sveltejs/kit').HandleClientError} */
+export function handleError({ error, event }) {
+  // Log errors to analytics service
+  console.error(error);
+}
+```
+</Accordion>
+
+<Accordion title="hooks.server.js - Server hooks">
+Contains your server-side hooks. The `handle` hook runs on every request:
+
+```javascript src/hooks.server.js
+/** @type {import('@sveltejs/kit').Handle} */
+export async function handle({ event, resolve }) {
+  // Add custom headers, authentication, etc.
+  const response = await resolve(event);
+  return response;
+}
+
+/** @type {import('@sveltejs/kit').HandleServerError} */
+export function handleError({ error, event }) {
+  // Log errors
+  console.error(error);
+}
+```
+</Accordion>
+
+<Accordion title="service-worker.js - Service worker">
+Contains your service worker for offline support and caching:
+
+```javascript src/service-worker.js
+import { build, files, version } from '$service-worker';
+
+const CACHE = `cache-${version}`;
+const ASSETS = [...build, ...files];
+
+self.addEventListener('install', (event) => {
+  // Cache assets
+});
+```
+</Accordion>
+
+<Accordion title="instrumentation.server.js - Observability setup">
+Contains your observability setup and instrumentation code. Requires adapter support and runs prior to loading your application code.
+
+```javascript src/instrumentation.server.js
+export function init() {
+  // Initialize tracing, monitoring, etc.
+}
+```
+</Accordion>
+
+### static
+
+Any static assets that should be served as-is — such as `robots.txt` or `favicon.png` — go in here.
+
+<Note>
+It's generally preferable to minimize the number of assets in `static/` and instead `import` them. Using an `import` allows Vite's built-in handling to give a unique name to an asset based on a hash of its contents so that it can be cached.
+</Note>
+
+### tests
+
+If you added [Playwright](https://playwright.dev/) for browser testing when you set up your project, the tests will live in this directory.
+
+```javascript tests/test.js
+import { expect, test } from '@playwright/test';
+
+test('index page has expected h1', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Welcome' })).toBeVisible();
+});
+```
+
+### package.json
+
+Your `package.json` file must include `@sveltejs/kit`, `svelte` and `vite` as `devDependencies`.
+
+```json package.json
+{
+  "name": "my-app",
+  "version": "0.0.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-auto": "^3.0.0",
+    "@sveltejs/kit": "^2.0.0",
+    "svelte": "^5.0.0",
+    "vite": "^6.0.0"
+  }
+}
+```
+
+<Tip>
+Notice `"type": "module"`. This means that `.js` files are interpreted as native JavaScript modules with `import` and `export` keywords. Legacy CommonJS files need a `.cjs` file extension.
+</Tip>
+
+### svelte.config.js
+
+This file contains your Svelte and SvelteKit configuration:
+
+```javascript svelte.config.js
+import adapter from '@sveltejs/adapter-auto';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+  kit: {
+    adapter: adapter(),
+    
+    // Additional configuration options
+    alias: {
+      $components: 'src/components'
+    }
+  }
+};
+
+export default config;
+```
+
+See the [configuration reference](https://svelte.dev/docs/kit/configuration) for all available options.
+
+### tsconfig.json
+
+This file (or `jsconfig.json`, if you prefer type-checked `.js` files over `.ts` files) configures TypeScript.
+
+Since SvelteKit relies on certain configuration being set a specific way, it generates its own `.svelte-kit/tsconfig.json` file which your own config extends.
+
+```json tsconfig.json
+{
+  "extends": "./.svelte-kit/tsconfig.json",
+  "compilerOptions": {
+    "strict": true
+  }
+}
+```
+
+### vite.config.js
+
+A SvelteKit project is really just a [Vite](https://vitejs.dev) project that uses the `@sveltejs/kit/vite` plugin:
+
+```javascript vite.config.js
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  plugins: [sveltekit()]
+});
+```
+
+You can add additional [Vite configuration](https://vitejs.dev/config/) as needed.
+
+## Generated files
+
+### .svelte-kit
+
+As you develop and build your project, SvelteKit will generate files in a `.svelte-kit` directory (configurable as `outDir`). You can ignore its contents, and delete them at any time (they will be regenerated when you next `dev` or `build`).
+
+<Warning>
+Add `.svelte-kit` to your `.gitignore` file. These generated files should not be committed to version control.
+</Warning>
+
+## Next steps
+
+<CardGroup cols={2}>
+  <Card title="Routing" icon="route" href="/core-concepts/routing">
+    Learn how to create pages and API routes
+  </Card>
+  <Card title="Loading data" icon="database" href="/core-concepts/load">
+    Fetch data for your pages
+  </Card>
+  <Card title="Web standards" icon="globe" href="/web-standards">
+    Understand the Web APIs SvelteKit uses
+  </Card>
+  <Card title="Configuration" icon="gear" href="https://svelte.dev/docs/kit/configuration">
+    Explore all configuration options
+  </Card>
+</CardGroup>

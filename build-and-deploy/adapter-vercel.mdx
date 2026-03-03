@@ -1,0 +1,431 @@
+---
+title: adapter-vercel
+description: Deploy your SvelteKit app to Vercel
+---
+
+The `@sveltejs/adapter-vercel` adapter deploys your SvelteKit app to [Vercel](https://vercel.com/).
+
+## Installation
+
+```bash
+npm install -D @sveltejs/adapter-vercel
+```
+
+## Usage
+
+Add the adapter to your `svelte.config.js`:
+
+```javascript
+/// file: svelte.config.js
+import adapter from '@sveltejs/adapter-vercel';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+  kit: {
+    adapter: adapter({
+      runtime: 'nodejs24.x',
+      regions: ['iad1'],
+      split: false
+    })
+  }
+};
+
+export default config;
+```
+
+## Configuration options
+
+From the adapter type definitions:
+
+```typescript
+/// file: packages/adapter-vercel/index.d.ts
+export interface ServerlessConfig {
+  runtime?: Exclude<RuntimeConfigKey, 'edge'>;
+  regions?: string[];
+  maxDuration?: number;
+  memory?: number;
+  split?: boolean;
+  isr?: {
+    expiration: number | string | false;
+    bypassToken?: string;
+    allowQuery?: string[] | undefined;
+  } | false;
+}
+
+export type Config = (EdgeConfig | ServerlessConfig) & {
+  images?: ImagesConfig;
+};
+```
+
+### runtime
+
+The runtime to use for your app. Can be a Node.js version or `'edge'`.
+
+<CodeGroup>
+```javascript Node.js 24
+adapter({
+  runtime: 'nodejs24.x'
+})
+```
+
+```javascript Node.js 22
+adapter({
+  runtime: 'nodejs22.x'
+})
+```
+
+```javascript Edge (deprecated)
+adapter({
+  runtime: 'edge'
+})
+```
+</CodeGroup>
+
+<Warning>
+The `runtime: 'edge'` option is deprecated and will be removed in a future version. Use serverless functions instead.
+</Warning>
+
+### regions
+
+An array of [Vercel Edge Network regions](https://vercel.com/docs/concepts/edge-network/regions) where your app will be deployed.
+
+```javascript
+adapter({
+  regions: ['iad1', 'sfo1']  // US East and West
+})
+```
+
+### maxDuration
+
+Maximum execution duration in seconds for serverless functions. Available on Pro and Enterprise plans.
+
+```javascript
+adapter({
+  maxDuration: 60  // 60 seconds
+})
+```
+
+### memory
+
+Amount of memory (in MB) allocated to serverless functions.
+
+```javascript
+adapter({
+  memory: 3008  // 3GB
+})
+```
+
+### split
+
+If `true`, each route will be deployed as a separate function. Useful for large apps to stay within function size limits.
+
+```javascript
+adapter({
+  split: true
+})
+```
+
+From the implementation:
+
+```javascript
+/// file: packages/adapter-vercel/index.js
+const id = config.split ? `${hash}-${groups.size}` : hash;
+let group = groups.get(id);
+if (!group) {
+  group = { i: groups.size, config, routes: [] };
+  groups.set(id, group);
+}
+```
+
+### isr
+
+[Incremental Static Regeneration](https://vercel.com/docs/concepts/incremental-static-regeneration/overview) configuration. Only works with serverless functions.
+
+<CodeGroup>
+```javascript Time-based revalidation
+adapter({
+  isr: {
+    expiration: 60  // Revalidate every 60 seconds
+  }
+})
+```
+
+```javascript On-demand revalidation
+adapter({
+  isr: {
+    expiration: false,  // Never expires automatically
+    bypassToken: 'my-secret-token'  // For manual revalidation
+  }
+})
+```
+
+```javascript Query parameters
+adapter({
+  isr: {
+    expiration: 3600,
+    allowQuery: ['id', 'page']  // Cache separately per query param
+  }
+})
+```
+</CodeGroup>
+
+You can also configure ISR per-route:
+
+```javascript
+/// file: src/routes/blog/[slug]/+page.server.js
+/** @type {import('./$types').PageServerLoad} */
+export const load = async ({ params }) => {
+  // ...
+};
+
+export const config = {
+  isr: {
+    expiration: 60
+  }
+};
+```
+
+<Note>
+ISR requires a serverless runtime. It does not work with edge functions.
+</Note>
+
+### images
+
+Configuration for [Vercel Image Optimization](https://vercel.com/docs/concepts/image-optimization):
+
+```javascript
+adapter({
+  images: {
+    sizes: [640, 828, 1200, 1920, 3840],
+    formats: ['image/avif', 'image/webp'],
+    domains: ['example.com'],
+    minimumCacheTTL: 300
+  }
+})
+```
+
+## Per-route configuration
+
+You can export a `config` object from `+page.server.js` or `+server.js` files to configure individual routes:
+
+```javascript
+/// file: src/routes/api/heavy/+server.js
+export const config = {
+  runtime: 'nodejs24.x',
+  maxDuration: 60,
+  memory: 3008,
+  regions: ['sfo1']
+};
+
+/** @type {import('./$types').RequestHandler} */
+export async function GET() {
+  // Heavy computation
+  return new Response('Done');
+}
+```
+
+From the adapter implementation:
+
+```javascript
+/// file: packages/adapter-vercel/index.js
+for (const route of builder.routes) {
+  const runtime = resolve_runtime(defaults.runtime, route.config.runtime);
+  const config = { ...defaults, ...route.config, runtime };
+  // ...
+}
+```
+
+## Build output
+
+The adapter generates a `.vercel/output` directory:
+
+```
+.vercel/output/
+├── config.json              # Routing configuration
+├── static/                  # Static assets
+│   └── _app/
+│       ├── immutable/
+│       └── version.json
+└── functions/
+    ├── ![-]/
+    │   └── catchall.func/   # Main serverless function
+    │       ├── index.js
+    │       └── .vc-config.json
+    └── index.func -> ![-]/catchall.func  # Symlink for observability
+```
+
+The configuration defines how requests are routed:
+
+```javascript
+/// file: packages/adapter-vercel/index.js
+const static_config = {
+  version: 3,
+  routes: [
+    {
+      src: '.*',
+      continue: true,
+      transforms: [
+        {
+          type: 'request.query',
+          op: 'delete',
+          target: { key: '__pathname' }
+        }
+      ]
+    },
+    {
+      src: `/${builder.getAppPath()}/immutable/.+`,
+      headers: {
+        'cache-control': 'public, immutable, max-age=31536000'
+      }
+    },
+    { handle: 'filesystem' },
+    { src: '/.*', dest: '/![-]/catchall' }
+  ],
+  overrides,
+  images
+};
+```
+
+## Platform object
+
+Vercel provides platform-specific context via `event.platform`:
+
+```typescript
+interface Platform {
+  // Available with Edge runtime
+  context?: RequestContext;
+}
+
+interface RequestContext {
+  waitUntil(promise: Promise<unknown>): void;
+}
+```
+
+Example usage:
+
+```javascript
+/// file: src/hooks.server.js
+/** @type {import('@sveltejs/kit').Handle} */
+export async function handle({ event, resolve }) {
+  const response = await resolve(event);
+  
+  // Log analytics in the background
+  event.platform?.context?.waitUntil(
+    fetch('https://analytics.example.com', {
+      method: 'POST',
+      body: JSON.stringify({
+        path: event.url.pathname,
+        status: response.status
+      })
+    })
+  );
+  
+  return response;
+}
+```
+
+## Environment variables
+
+Vercel provides several automatic environment variables:
+
+| Variable | Description |
+|----------|-------------|
+| `VERCEL` | Always `'1'` on Vercel |
+| `VERCEL_ENV` | `'production'`, `'preview'`, or `'development'` |
+| `VERCEL_URL` | Deployment URL |
+| `VERCEL_DEPLOYMENT_ID` | Unique deployment identifier |
+
+Access them in your app:
+
+```javascript
+import { env } from '$env/dynamic/private';
+
+export function load() {
+  if (env.VERCEL_ENV === 'production') {
+    // Production-only logic
+  }
+}
+```
+
+## Deployment
+
+<Steps>
+  <Step title="Build your app">
+    ```bash
+    npm run build
+    ```
+  </Step>
+  
+  <Step title="Deploy to Vercel">
+    <CodeGroup>
+    ```bash Vercel CLI
+    vercel --prod
+    ```
+    
+    ```bash Git integration
+    git push origin main
+    # Automatically deploys via Vercel
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Skew protection
+
+Vercel automatically enables [skew protection](https://vercel.com/docs/deployments/skew-protection) to prevent version mismatches:
+
+```javascript
+/// file: packages/adapter-vercel/index.js
+if (process.env.VERCEL_SKEW_PROTECTION_ENABLED) {
+  routes.push({
+    src: '/.*',
+    has: [
+      {
+        type: 'header',
+        key: 'Sec-Fetch-Dest',
+        value: 'document'
+      }
+    ],
+    headers: {
+      'Set-Cookie': `__vdpl=${process.env.VERCEL_DEPLOYMENT_ID}; Path=${builder.config.kit.paths.base}/; SameSite=Strict; Secure; HttpOnly`
+    },
+    continue: true
+  });
+}
+```
+
+## Cron jobs
+
+Vercel supports scheduled functions via `vercel.json`:
+
+```json
+{
+  "crons": [
+    {
+      "path": "/api/cron/daily",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}
+```
+
+The adapter validates cron paths against your routes:
+
+```javascript
+/// file: packages/adapter-vercel/index.js
+function validate_vercel_json(builder, vercel_config) {
+  const valid_routes = builder.routes.filter((route) => 
+    route.api.methods.includes('GET')
+  );
+  
+  for (const cron of crons) {
+    if (!valid_routes.some((route) => route.pattern.test(cron.path))) {
+      unmatched_paths.push(cron.path);
+    }
+  }
+}
+```
+
+<Tip>
+Vercel automatically detects `VERCEL=true` during builds, which is how `adapter-auto` identifies the Vercel environment.
+</Tip>

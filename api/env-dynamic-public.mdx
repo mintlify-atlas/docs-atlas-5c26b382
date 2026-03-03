@@ -1,0 +1,154 @@
+---
+title: '$env/dynamic/public'
+description: 'Dynamic client-accessible environment variables'
+---
+
+The `$env/dynamic/public` module provides access to public environment variables that can be accessed on both the client and server at runtime. These variables are prefixed with `PUBLIC_` by default and are safe to expose to browsers.
+
+## Usage
+
+```javascript
+import { env } from '$env/dynamic/public';
+```
+
+<Note>
+  This module can be imported anywhere - in both client-side and server-side code.
+</Note>
+
+## Environment Variable
+
+<ParamField path="env" type="Record<string, string>">
+  An object containing all environment variables that match the `publicPrefix` configuration (default: `PUBLIC_`).
+  
+  Public environment variables are safe to expose to client-side code and are embedded in the JavaScript sent to browsers.
+</ParamField>
+
+## Example: Component
+
+```svelte
+<!-- src/routes/+page.svelte -->
+<script>
+  import { env } from '$env/dynamic/public';
+</script>
+
+<h1>Welcome to {env.PUBLIC_SITE_NAME}</h1>
+<p>API endpoint: {env.PUBLIC_API_URL}</p>
+```
+
+## Example: Client Hook
+
+```javascript
+// src/hooks.client.js
+import { env } from '$env/dynamic/public';
+
+export async function handleError({ error, event }) {
+  // Send errors to public analytics endpoint
+  await fetch(env.PUBLIC_ANALYTICS_URL, {
+    method: 'POST',
+    body: JSON.stringify({ error: error.message })
+  });
+}
+```
+
+## Example: Server Load Function
+
+```javascript
+// src/routes/+page.server.js
+import { env } from '$env/dynamic/public';
+
+export function load() {
+  return {
+    // Public env vars can be returned to the client
+    apiUrl: env.PUBLIC_API_URL,
+    siteName: env.PUBLIC_SITE_NAME
+  };
+}
+```
+
+## Example: Prerendering
+
+```svelte
+<!-- src/routes/+page.svelte -->
+<script>
+  import { env } from '$env/dynamic/public';
+</script>
+
+<!-- Dynamic public env vars work during prerendering -->
+<footer>
+  <p>© {env.PUBLIC_COMPANY_NAME}</p>
+  <a href={env.PUBLIC_SUPPORT_URL}>Support</a>
+</footer>
+```
+
+## Configuration
+
+You can configure the public prefix using the `env.publicPrefix` option in your `svelte.config.js`:
+
+```javascript
+// svelte.config.js
+export default {
+  kit: {
+    env: {
+      publicPrefix: 'PUBLIC_'
+    }
+  }
+};
+```
+
+Only environment variables starting with `PUBLIC_` will be available in `$env/dynamic/public` and exposed to browsers.
+
+## Setting Public Environment Variables
+
+Create a `.env` file in your project root:
+
+```bash
+# .env
+PUBLIC_API_URL=https://api.example.com
+PUBLIC_SITE_NAME=My SvelteKit App
+```
+
+Or set them when running your application:
+
+```bash
+PUBLIC_API_URL=https://api.example.com npm run dev
+```
+
+## When to Use Dynamic vs Static
+
+<CardGroup cols={2}>
+  <Card title="Use Dynamic" icon="arrows-rotate">
+    - Environment variables that change between deployments
+    - Different values for dev/staging/production
+    - Runtime configuration
+    - A/B testing configurations
+  </Card>
+  
+  <Card title="Use Static" icon="lock">
+    - Build-time constants
+    - Values that never change
+    - Better performance (inlined at build time)
+    - Type-safe access with TypeScript
+  </Card>
+</CardGroup>
+
+## Security Warning
+
+<Warning>
+  **Never put secrets in public environment variables!**
+  
+  All `PUBLIC_*` environment variables are exposed to browsers and can be viewed by anyone. Use `$env/dynamic/private` or `$env/static/private` for sensitive data.
+</Warning>
+
+## Prerendering Behavior
+
+Dynamic public environment variables are evaluated at runtime, including during prerendering:
+
+- Values are read from `process.env` when the page is prerendered
+- The same values are embedded in the generated HTML
+- Client-side JavaScript can still access these values via the `env` object
+
+## See Also
+
+- [\$env/static/public](/api/env-static-public) - Static public environment variables
+- [\$env/dynamic/private](/api/env-dynamic-private) - Dynamic server-only environment variables
+- [Configuration](/api/configuration) - Environment variable configuration options

@@ -1,0 +1,126 @@
+---
+title: '$env/dynamic/private'
+description: 'Dynamic server-only environment variables'
+---
+
+The `$env/dynamic/private` module provides access to environment variables that are only available on the server at runtime. Unlike static environment variables, these are read from the process environment and can change between deployments without requiring a rebuild.
+
+## Usage
+
+```javascript
+import { env } from '$env/dynamic/private';
+```
+
+<Note>
+  This module can only be imported in server-side code (e.g., `+page.server.js`, `+layout.server.js`, `+server.js`, and `hooks.server.js`).
+</Note>
+
+## Environment Variable
+
+<ParamField path="env" type="Record<string, string>">
+  An object containing all environment variables that match the `privatePrefix` configuration (default: all non-public variables).
+  
+  The `env` object is read from `process.env` at runtime, allowing you to access environment variables that are set after the application is built.
+</ParamField>
+
+## Example: Server Load Function
+
+```javascript
+// src/routes/+page.server.js
+import { env } from '$env/dynamic/private';
+
+export function load() {
+  return {
+    // Access runtime environment variables
+    apiKey: env.API_KEY,
+    databaseUrl: env.DATABASE_URL
+  };
+}
+```
+
+## Example: API Route
+
+```javascript
+// src/routes/api/data/+server.js
+import { env } from '$env/dynamic/private';
+import { json } from '@sveltejs/kit';
+
+export async function GET() {
+  const apiKey = env.API_KEY;
+  
+  const response = await fetch('https://api.example.com/data', {
+    headers: {
+      'Authorization': `Bearer ${apiKey}`
+    }
+  });
+  
+  const data = await response.json();
+  return json(data);
+}
+```
+
+## Example: Remote Function
+
+```javascript
+// src/routes/remote/data.remote.js
+import { env } from '$env/dynamic/private';
+import { query } from '$app/server';
+
+export const getData = query(async () => {
+  // Environment variables are available in remote functions
+  const apiUrl = env.API_URL;
+  return fetch(apiUrl).then(r => r.json());
+});
+```
+
+## Configuration
+
+You can configure which environment variables are included using the `env.privatePrefix` option in your `svelte.config.js`:
+
+```javascript
+// svelte.config.js
+export default {
+  kit: {
+    env: {
+      privatePrefix: 'PRIVATE_',
+      publicPrefix: 'PUBLIC_'
+    }
+  }
+};
+```
+
+With this configuration, only variables starting with `PRIVATE_` will be available in `$env/dynamic/private`. Variables without a matching prefix are discarded.
+
+## When to Use Dynamic vs Static
+
+<CardGroup cols={2}>
+  <Card title="Use Dynamic" icon="arrows-rotate">
+    - Environment variables that change between deployments
+    - Different values for staging/production
+    - Secrets that shouldn't be in the build output
+    - Runtime configuration
+  </Card>
+  
+  <Card title="Use Static" icon="lock">
+    - Build-time constants
+    - Values that never change
+    - Better performance (inlined at build time)
+    - Type-safe access
+  </Card>
+</CardGroup>
+
+## Security Considerations
+
+<Warning>
+  Never expose private environment variables to client-side code. They are only available in:
+  - `*.server.js` files
+  - `*.remote.js` files
+  - `hooks.server.js`
+  - API routes (`+server.js`)
+</Warning>
+
+## See Also
+
+- [\$env/static/private](/api/env-static-private) - Static server-only environment variables
+- [\$env/dynamic/public](/api/env-dynamic-public) - Dynamic client-accessible environment variables
+- [Configuration](/api/configuration) - Environment variable configuration options

@@ -1,0 +1,218 @@
+---
+title: adapter-node
+description: Deploy your SvelteKit app to Node.js servers
+---
+
+The `@sveltejs/adapter-node` adapter generates a standalone Node server for your SvelteKit application.
+
+## Installation
+
+```bash
+npm install -D @sveltejs/adapter-node
+```
+
+## Usage
+
+Add the adapter to your `svelte.config.js`:
+
+```javascript
+/// file: svelte.config.js
+import adapter from '@sveltejs/adapter-node';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+  kit: {
+    adapter: adapter({
+      // Adapter options
+      out: 'build',
+      precompress: true,
+      envPrefix: ''
+    })
+  }
+};
+
+export default config;
+```
+
+## Configuration options
+
+These options are defined in the adapter source code:
+
+```typescript
+/// file: packages/adapter-node/index.d.ts
+interface AdapterOptions {
+  out?: string;        // Output directory (default: 'build')
+  precompress?: boolean;  // Enable gzip/brotli compression (default: true)
+  envPrefix?: string;     // Environment variable prefix (default: '')
+}
+```
+
+### out
+
+The directory where the server build output will be written.
+
+```javascript
+adapter({
+  out: 'my-server-build'
+})
+```
+
+### precompress
+
+Enables precompression of assets using gzip and brotli. This is enabled by default.
+
+```javascript
+adapter({
+  precompress: true  // Creates .gz and .br files alongside assets
+})
+```
+
+From the adapter implementation:
+
+```javascript
+/// file: packages/adapter-node/index.js
+if (precompress) {
+  builder.log.minor('Compressing assets');
+  await Promise.all([
+    builder.compress(`${out}/client`),
+    builder.compress(`${out}/prerendered`)
+  ]);
+}
+```
+
+### envPrefix
+
+A prefix for environment variables. For example, if you set `envPrefix: 'MY_APP_'`, then environment variables like `MY_APP_HOST` and `MY_APP_PORT` will be used.
+
+```javascript
+adapter({
+  envPrefix: 'MY_APP_'
+})
+```
+
+## Deployment
+
+After building your app, the output directory contains everything needed to run your application:
+
+<Steps>
+  <Step title="Build the app">
+    ```bash
+    npm run build
+    ```
+  </Step>
+  
+  <Step title="Run the server">
+    ```bash
+    node build/index.js
+    ```
+  </Step>
+</Steps>
+
+## Environment variables
+
+The adapter recognizes several environment variables to configure the server at runtime:
+
+| Variable | Description | Default |
+|----------|-------------|----------|
+| `PORT` | Port to listen on | `3000` |
+| `HOST` | Host to listen on | `0.0.0.0` |
+| `ORIGIN` | Origin URL for the app | Auto-detected |
+| `XFF_DEPTH` | Depth of X-Forwarded-For header to trust | `1` |
+| `ADDRESS_HEADER` | Header to read client address from | - |
+| `PROTOCOL_HEADER` | Header to read protocol from | - |
+| `HOST_HEADER` | Header to read host from | - |
+| `PORT_HEADER` | Header to read port from | - |
+| `BODY_SIZE_LIMIT` | Maximum request body size | `512K` |
+
+<CodeGroup>
+```bash Basic usage
+PORT=4000 node build/index.js
+```
+
+```bash Behind a proxy
+ADDRESS_HEADER=X-Forwarded-For \
+XFF_DEPTH=1 \
+PROTOCOL_HEADER=X-Forwarded-Proto \
+node build/index.js
+```
+
+```bash Custom origin
+ORIGIN=https://my-app.com node build/index.js
+```
+</CodeGroup>
+
+Here's how environment variables are used in the handler:
+
+```javascript
+/// file: packages/adapter-node/src/handler.js
+const origin = parse_origin(env('ORIGIN', undefined));
+const xff_depth = parseInt(env('XFF_DEPTH', '1'));
+const address_header = env('ADDRESS_HEADER', '').toLowerCase();
+const protocol_header = env('PROTOCOL_HEADER', '').toLowerCase();
+const host_header = env('HOST_HEADER', '').toLowerCase();
+const port_header = env('PORT_HEADER', '').toLowerCase();
+const body_size_limit = parse_as_bytes(env('BODY_SIZE_LIMIT', '512K'));
+```
+
+## Build output structure
+
+The adapter generates the following directory structure:
+
+```
+build/
+├── index.js          # Server entry point
+├── handler.js        # Request handler
+├── env.js           # Environment configuration
+├── server/          # Server-side code
+│   ├── index.js     # SvelteKit server
+│   └── manifest.js  # App manifest
+├── client/          # Client assets
+│   └── _app/        # Built client code
+└── prerendered/     # Prerendered pages
+```
+
+## Platform object
+
+The adapter provides access to the raw Node.js request object via `event.platform`:
+
+```javascript
+/// file: src/hooks.server.js
+/** @type {import('@sveltejs/kit').Handle} */
+export async function handle({ event, resolve }) {
+  // Access the raw Node request
+  const { req } = event.platform;
+  
+  console.log('Request headers:', req.headers);
+  
+  return resolve(event);
+}
+```
+
+<Note>
+The `platform.req` object is the raw Node.js `IncomingMessage` object from the `http` module.
+</Note>
+
+## Advanced usage
+
+You can use the generated `handler.js` as middleware in your own Node server:
+
+```javascript
+import express from 'express';
+import { handler } from './build/handler.js';
+
+const app = express();
+
+// Add custom middleware
+app.use('/api/custom', (req, res) => {
+  res.json({ custom: 'endpoint' });
+});
+
+// Use SvelteKit handler for everything else
+app.use(handler);
+
+app.listen(3000);
+```
+
+<Tip>
+The adapter bundles dependencies using Rollup, but dependencies listed in `package.json` are kept as external imports. Make sure to install production dependencies before deploying.
+</Tip>

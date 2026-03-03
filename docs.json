@@ -1,122 +1,116 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "SvelteKit",
+  "theme": "willow",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#FF3E00",
+    "light": "#FF3E00",
+    "dark": "#FF3E00"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/sveltejs/kit"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/sveltejs/kit"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Getting Started",
             "pages": [
-              "index",
+              "introduction",
               "quickstart",
-              "development"
+              "project-structure",
+              "web-standards"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Core Concepts",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "core-concepts/routing",
+              "core-concepts/load",
+              "core-concepts/form-actions",
+              "core-concepts/page-options",
+              "core-concepts/state-management",
+              "core-concepts/remote-functions"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Build and Deploy",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "build-and-deploy/building",
+              "build-and-deploy/adapters",
+              "build-and-deploy/adapter-auto",
+              "build-and-deploy/adapter-node",
+              "build-and-deploy/adapter-static",
+              "build-and-deploy/adapter-cloudflare",
+              "build-and-deploy/adapter-netlify",
+              "build-and-deploy/adapter-vercel"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Advanced",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "advanced/hooks",
+              "advanced/page-data",
+              "advanced/service-workers",
+              "advanced/errors",
+              "advanced/link-options",
+              "advanced/images"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "API Reference",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Core Modules",
             "pages": [
-              "api-reference/introduction"
+              "api/sveltejs-kit",
+              "api/sveltejs-kit-hooks",
+              "api/sveltejs-kit-node",
+              "api/sveltejs-kit-vite"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "$app Modules",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/app-environment",
+              "api/app-forms",
+              "api/app-navigation",
+              "api/app-paths",
+              "api/app-server",
+              "api/app-state",
+              "api/app-stores"
+            ]
+          },
+          {
+            "group": "$env Modules",
+            "pages": [
+              "api/env-dynamic-private",
+              "api/env-dynamic-public",
+              "api/env-static-private",
+              "api/env-static-public"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "api/configuration",
+              "api/types"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

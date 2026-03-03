@@ -1,0 +1,315 @@
+---
+title: adapter-cloudflare
+description: Deploy your SvelteKit app to Cloudflare Workers and Cloudflare Pages
+---
+
+The `@sveltejs/adapter-cloudflare` adapter deploys your SvelteKit app to [Cloudflare Workers](https://developers.cloudflare.com/workers/) with static assets or [Cloudflare Pages](https://developers.cloudflare.com/pages/).
+
+## Installation
+
+```bash
+npm install -D @sveltejs/adapter-cloudflare wrangler
+```
+
+## Usage
+
+Add the adapter to your `svelte.config.js`:
+
+```javascript
+/// file: svelte.config.js
+import adapter from '@sveltejs/adapter-cloudflare';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+  kit: {
+    adapter: adapter({
+      routes: {
+        include: ['/*'],
+        exclude: ['<all>']
+      }
+    })
+  }
+};
+
+export default config;
+```
+
+## Configuration options
+
+From the adapter type definitions:
+
+```typescript
+/// file: packages/adapter-cloudflare/index.d.ts
+export interface AdapterOptions {
+  config?: string;      // Path to wrangler config
+  fallback?: 'plaintext' | 'spa';  // 404 handling
+  routes?: {
+    include?: string[];  // Routes handled by functions
+    exclude?: string[];  // Routes served as static assets
+  };
+  platformProxy?: GetPlatformProxyOptions;
+}
+```
+
+### config
+
+Path to your Wrangler configuration file.
+
+```javascript
+adapter({
+  config: 'wrangler.toml'
+})
+```
+
+### fallback
+
+Controls how 404 errors are handled:
+
+- `'plaintext'` (default): Returns a simple "Not Found" text response
+- `'spa'`: Generates a SPA fallback page for client-side routing
+
+```javascript
+adapter({
+  fallback: 'spa'  // Better for client-side navigation
+})
+```
+
+From the implementation:
+
+```javascript
+/// file: packages/adapter-cloudflare/index.js
+if (options.fallback === 'spa') {
+  await builder.generateFallback(fallback);
+} else {
+  writeFileSync(fallback, 'Not Found');
+}
+```
+
+### routes
+
+Only for Cloudflare Pages. Customizes the automatically-generated `_routes.json` file that controls routing.
+
+<CodeGroup>
+```javascript Default
+adapter({
+  routes: {
+    include: ['/*'],
+    exclude: ['<all>']  // Excludes all static assets
+  }
+})
+```
+
+```javascript Custom
+adapter({
+  routes: {
+    include: ['/*'],
+    exclude: [
+      '<build>',      // Build artifacts
+      '<files>',      // Static directory contents
+      '<prerendered>' // Prerendered pages
+    ]
+  }
+})
+```
+
+```javascript Manual
+adapter({
+  routes: {
+    include: ['/api/*', '/admin/*'],
+    exclude: ['/blog/*', '/static/*']
+  }
+})
+```
+</CodeGroup>
+
+<Note>
+The placeholders `<build>`, `<files>`, `<prerendered>`, and `<all>` are automatically expanded by the adapter.
+</Note>
+
+### platformProxy
+
+Configuration passed to Wrangler's `getPlatformProxy` during development:
+
+```javascript
+adapter({
+  platformProxy: {
+    persist: true  // Persist KV/D1/R2 data between dev sessions
+  }
+})
+```
+
+## Wrangler configuration
+
+Create a `wrangler.toml` file in your project root:
+
+```toml
+name = "my-sveltekit-app"
+compatibility_date = "2024-01-01"
+
+pages_build_output_dir = ".vercel/output/static"
+
+[env.production]
+routes = [
+  { pattern = "example.com", zone_name = "example.com" }
+]
+```
+
+## Environment bindings
+
+Access Cloudflare bindings via the `platform.env` object:
+
+<CodeGroup>
+```javascript KV namespace
+/// file: src/routes/api/data/+server.js
+/** @type {import('./$types').RequestHandler} */
+export async function GET({ platform }) {
+  const value = await platform.env.MY_KV.get('key');
+  return new Response(value);
+}
+```
+
+```javascript D1 database
+/// file: src/routes/api/users/+server.js
+/** @type {import('./$types').RequestHandler} */
+export async function GET({ platform }) {
+  const { results } = await platform.env.DB
+    .prepare('SELECT * FROM users')
+    .all();
+  
+  return new Response(JSON.stringify(results));
+}
+```
+
+```javascript R2 bucket
+/// file: src/routes/api/upload/+server.js
+/** @type {import('./$types').RequestHandler} */
+export async function POST({ request, platform }) {
+  const file = await request.blob();
+  await platform.env.MY_BUCKET.put('file.dat', file);
+  
+  return new Response('Uploaded');
+}
+```
+</CodeGroup>
+
+Define bindings in `wrangler.toml`:
+
+```toml
+[[kv_namespaces]]
+binding = "MY_KV"
+id = "your-kv-namespace-id"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "my-database"
+database_id = "your-database-id"
+
+[[r2_buckets]]
+binding = "MY_BUCKET"
+bucket_name = "my-bucket"
+```
+
+## Platform object
+
+The `platform` object provides access to Cloudflare-specific APIs:
+
+```typescript
+interface Platform {
+  env: {
+    // Your KV namespaces, D1 databases, R2 buckets, etc.
+    [key: string]: any;
+  };
+  context: {
+    waitUntil(promise: Promise<any>): void;
+    passThroughOnException(): void;
+  };
+  caches: CacheStorage;
+  cf: IncomingRequestCfProperties;
+}
+```
+
+Example usage:
+
+```javascript
+/// file: src/hooks.server.js
+/** @type {import('@sveltejs/kit').Handle} */
+export async function handle({ event, resolve }) {
+  // Access request metadata
+  const country = event.platform.cf.country;
+  
+  // Use waitUntil for background tasks
+  event.platform.context.waitUntil(
+    logAnalytics(event.request)
+  );
+  
+  const response = await resolve(event);
+  response.headers.set('X-Country', country);
+  
+  return response;
+}
+```
+
+## Generated files
+
+The adapter generates several Cloudflare-specific files:
+
+```
+.cloudflare/
+├── _worker.js        # Worker entry point
+├── _headers          # Custom headers
+├── _redirects        # Redirect rules
+└── _routes.json      # Routing configuration (Pages only)
+```
+
+Headers are automatically generated for immutable assets:
+
+```javascript
+/// file: packages/adapter-cloudflare/index.js
+function generate_headers(app_dir) {
+  return `
+# === START AUTOGENERATED SVELTE IMMUTABLE HEADERS ===
+/${app_dir}/*
+  X-Robots-Tag: noindex
+  Cache-Control: no-cache
+/${app_dir}/immutable/*
+  ! Cache-Control
+  Cache-Control: public, immutable, max-age=31536000
+# === END AUTOGENERATED SVELTE IMMUTABLE HEADERS ===
+`.trimEnd();
+}
+```
+
+## Deployment
+
+<Steps>
+  <Step title="Build your app">
+    ```bash
+    npm run build
+    ```
+  </Step>
+  
+  <Step title="Deploy to Cloudflare">
+    <CodeGroup>
+    ```bash Cloudflare Pages
+    wrangler pages deploy
+    ```
+    
+    ```bash Cloudflare Workers
+    wrangler deploy
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+<Tip>
+For Cloudflare Pages, you can also connect your GitHub repository for automatic deployments.
+</Tip>
+
+## Limitations
+
+<Warning>
+Cloudflare Workers have runtime limitations:
+- Maximum script size: 1 MB (after compression)
+- CPU time limit: 10-50ms per request (depends on plan)
+- No access to Node.js APIs
+</Warning>

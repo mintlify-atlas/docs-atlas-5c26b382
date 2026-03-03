@@ -1,0 +1,308 @@
+---
+title: adapter-netlify
+description: Deploy your SvelteKit app to Netlify
+---
+
+The `@sveltejs/adapter-netlify` adapter deploys your SvelteKit app to [Netlify](https://www.netlify.com/).
+
+## Installation
+
+```bash
+npm install -D @sveltejs/adapter-netlify
+```
+
+## Usage
+
+Add the adapter to your `svelte.config.js`:
+
+```javascript
+/// file: svelte.config.js
+import adapter from '@sveltejs/adapter-netlify';
+
+/** @type {import('@sveltejs/kit').Config} */
+const config = {
+  kit: {
+    adapter: adapter({
+      edge: false,
+      split: false
+    })
+  }
+};
+
+export default config;
+```
+
+## Configuration options
+
+From the adapter type definitions:
+
+```typescript
+/// file: packages/adapter-netlify/index.d.ts
+export default function plugin(opts?: { 
+  split?: boolean;   // Split into multiple functions
+  edge?: boolean;    // Use Netlify Edge Functions
+}): Adapter;
+```
+
+### split
+
+If `true`, creates a separate Netlify function for each route. This can improve cold start times but may hit function limits on large sites.
+
+```javascript
+adapter({
+  split: true  // One function per route
+})
+```
+
+From the implementation:
+
+```javascript
+/// file: packages/adapter-netlify/index.js
+if (split) {
+  for (let i = 0; i < builder.routes.length; i++) {
+    const route = builder.routes[i];
+    if (route.prerender === true) continue;
+    
+    const parts = [];
+    for (const segment of route.segments) {
+      if (segment.rest) {
+        parts.push('*');
+      } else if (segment.dynamic) {
+        parts.push(`:param${parts.length}`);
+      } else {
+        parts.push(segment.content);
+      }
+    }
+    
+    const pattern = `/${parts.join('/')}`;
+    const name = FUNCTION_PREFIX + 
+      (parts.join('-').replace(/[:.]/g, '_').replace('*', '__rest') || 'index');
+    
+    generate_serverless_function({ builder, routes, patterns, name });
+  }
+}
+```
+
+### edge
+
+Deploys to [Netlify Edge Functions](https://docs.netlify.com/edge-functions/overview/) instead of serverless functions. Edge Functions run on Deno at the edge, closer to your users.
+
+```javascript
+adapter({
+  edge: true  // Use edge runtime
+})
+```
+
+<Warning>
+You cannot use both `split: true` and `edge: true` together. Edge Functions do not support splitting.
+</Warning>
+
+## Netlify configuration
+
+Create a `netlify.toml` file to configure your deployment:
+
+```toml
+[build]
+  command = "npm run build"
+  publish = "build"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[redirects]]
+  from = "/old-path"
+  to = "/new-path"
+  status = 301
+```
+
+The adapter automatically detects the publish directory from `netlify.toml`:
+
+```javascript
+/// file: packages/adapter-netlify/index.js
+function get_publish_directory(netlify_config, builder) {
+  if (netlify_config) {
+    if (!netlify_config.build?.publish) {
+      builder.log.minor('No publish directory specified in netlify.toml, using default');
+      return;
+    }
+    
+    if (resolve(netlify_config.build.publish) === process.cwd()) {
+      throw new Error(
+        'The publish directory cannot be set to the site root. ' +
+        'Please change it to another value such as "build" in netlify.toml.'
+      );
+    }
+    return netlify_config.build.publish;
+  }
+}
+```
+
+## Custom headers and redirects
+
+You can add custom headers and redirects by creating `_headers` and `_redirects` files in your project root:
+
+<CodeGroup>
+```text _headers
+# Cache immutable assets
+/_app/immutable/*
+  Cache-Control: public, immutable, max-age=31536000
+
+# Security headers
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+```
+
+```text _redirects
+# Redirect old URLs
+/old-blog/*  /blog/:splat  301
+/home        /             301
+
+# Proxy requests
+/api/*  https://api.example.com/:splat  200
+```
+</CodeGroup>
+
+The adapter preserves these files and adds SvelteKit-generated headers:
+
+```javascript
+/// file: packages/adapter-netlify/index.js
+builder.log.minor('Writing custom headers...');
+const headers_file = join(publish, '_headers');
+builder.copy('_headers', headers_file);
+appendFileSync(
+  headers_file,
+  `\n\n/${builder.getAppPath()}/immutable/*\n  cache-control: public\n  cache-control: immutable\n  cache-control: max-age=31536000\n`
+);
+```
+
+<Note>
+Place `_headers` and `_redirects` in your project root, not in the `static` directory. The adapter will throw an error if they're in the wrong location.
+</Note>
+
+## Platform context
+
+Netlify provides a `context` object with request and environment information:
+
+```javascript
+/// file: src/hooks.server.js
+/** @type {import('@sveltejs/kit').Handle} */
+export async function handle({ event, resolve }) {
+  // Access Netlify context (when using Edge Functions)
+  console.log('Deploy ID:', event.platform?.context?.deploy?.id);
+  console.log('Geo location:', event.platform?.context?.geo);
+  
+  return resolve(event);
+}
+```
+
+## Build output
+
+The adapter generates different output based on your configuration:
+
+<CodeGroup>
+```text Serverless functions
+.netlify/
+├── functions-internal/
+│   ├── sveltekit-render.mjs        # Main function
+│   └── sveltekit-render.mjs.map    # Source map
+├── server/                          # Server code
+├── serverless.js                    # Function wrapper
+└── package.json
+
+build/                               # Published directory
+├── _headers                         # HTTP headers
+├── _redirects                       # Redirect rules
+└── ...                             # Static assets
+```
+
+```text Edge Functions
+.netlify/
+├── edge-functions/
+│   ├── render.js                   # Edge function
+│   └── manifest.json               # Edge configuration
+└── ...
+
+build/                              # Published directory
+└── ...                             # Static assets
+```
+
+```text Split functions
+.netlify/
+├── functions-internal/
+│   ├── sveltekit-index.mjs        # Root route
+│   ├── sveltekit-about.mjs        # /about route
+│   ├── sveltekit-blog-[slug].mjs  # /blog/[slug] route
+│   └── ...
+└── ...
+```
+</CodeGroup>
+
+## Deployment
+
+<Steps>
+  <Step title="Build locally">
+    ```bash
+    npm run build
+    ```
+  </Step>
+  
+  <Step title="Deploy">
+    <CodeGroup>
+    ```bash Netlify CLI
+    netlify deploy --prod
+    ```
+    
+    ```bash Git integration
+    git push origin main
+    # Automatically deploys via Netlify
+    ```
+    </CodeGroup>
+  </Step>
+</Steps>
+
+## Environment variables
+
+Set environment variables in the Netlify UI or via `netlify.toml`:
+
+```toml
+[build.environment]
+  DATABASE_URL = "postgresql://..."
+  API_KEY = "secret-key"
+
+[context.production.environment]
+  NODE_ENV = "production"
+
+[context.deploy-preview.environment]
+  NODE_ENV = "staging"
+```
+
+Access them in your app:
+
+```javascript
+import { env } from '$env/dynamic/private';
+
+export async function load() {
+  const data = await fetch(env.DATABASE_URL);
+  // ...
+}
+```
+
+<Tip>
+Netlify automatically sets `NETLIFY=true` during builds, which is how `adapter-auto` detects the Netlify environment.
+</Tip>
+
+## Edge Functions vs Serverless
+
+| Feature | Edge Functions | Serverless Functions |
+|---------|----------------|----------------------|
+| Runtime | Deno at the edge | Node.js in US East |
+| Cold start | Faster (~0-10ms) | Slower (~50-200ms) |
+| Execution time | Up to 50s | Up to 26s |
+| Node APIs | Limited | Full support |
+| NPM packages | Most work | All work |
+| Splitting | Not supported | Supported |
+
+<Warning>
+Edge Functions run on Deno, not Node.js. Some Node.js-specific packages may not work. Test thoroughly before deploying.
+</Warning>

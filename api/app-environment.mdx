@@ -1,0 +1,96 @@
+---
+title: '$app/environment'
+description: 'Environment variables and build information for SvelteKit applications'
+---
+
+The `$app/environment` module provides access to environment variables and build-time information about your SvelteKit application.
+
+## browser
+
+<ParamField path="browser" type="boolean">
+  `true` if the app is running in the browser, `false` otherwise.
+
+  ```js
+  import { browser } from '$app/environment';
+
+  if (browser) {
+    // This code will only run in the browser
+    console.log('Running in browser');
+  }
+  ```
+</ParamField>
+
+## dev
+
+<ParamField path="dev" type="boolean">
+  Whether the dev server is running. This is not guaranteed to correspond to `NODE_ENV` or `MODE`.
+
+  ```js
+  import { dev } from '$app/environment';
+
+  if (dev) {
+    console.log('Development mode');
+  }
+  ```
+</ParamField>
+
+## building
+
+<ParamField path="building" type="boolean">
+  SvelteKit analyses your app during the `build` step by running it. During this process, `building` is `true`. This also applies during prerendering.
+
+  ```js
+  import { building } from '$app/environment';
+
+  if (building) {
+    console.log('Building application');
+  }
+  ```
+</ParamField>
+
+## version
+
+<ParamField path="version" type="string">
+  The value of `config.kit.version.name`.
+
+  ```js
+  import { version } from '$app/environment';
+
+  console.log(`App version: ${version}`);
+  ```
+</ParamField>
+
+## Usage Examples
+
+### Conditional Browser Code
+
+```js
+import { browser } from '$app/environment';
+
+if (browser) {
+  // Access browser APIs safely
+  localStorage.setItem('visited', 'true');
+}
+```
+
+### Development-Only Features
+
+```js
+import { dev } from '$app/environment';
+
+if (dev) {
+  // Enable debugging features only in development
+  window.__DEBUG__ = true;
+}
+```
+
+### Build-Time Optimization
+
+```js
+import { building } from '$app/environment';
+
+if (!building) {
+  // Skip expensive operations during build
+  initializeAnalytics();
+}
+```

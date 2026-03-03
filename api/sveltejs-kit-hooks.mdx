@@ -1,0 +1,167 @@
+---
+title: '@sveltejs/kit/hooks'
+description: Hook utilities for chaining server-side middleware
+---
+
+The `@sveltejs/kit/hooks` module provides utilities for composing multiple hooks in your SvelteKit application.
+
+## sequence
+
+A helper function for sequencing multiple `handle` calls in a middleware-like manner. This allows you to compose multiple server hooks that run in a specific order.
+
+**Behavior for handle options:**
+- `transformPageChunk` is applied in **reverse order** and merged
+- `preload` is applied in **forward order**, the first option "wins" and no `preload` options after it are called
+- `filterSerializedResponseHeaders` behaves the same as `preload`
+
+<ParamField path="handlers" type="Handle[]" required>
+  The chain of `handle` functions to sequence.
+</ParamField>
+
+<ResponseField name="return" type="Handle">
+  A single `handle` function that executes all handlers in sequence.
+</ResponseField>
+
+### Basic Example
+
+```js
+// src/hooks.server.js
+import { sequence } from '@sveltejs/kit/hooks';
+
+/** @type {import('@sveltejs/kit').Handle} */
+async function first({ event, resolve }) {
+  console.log('first pre-processing');
+  const result = await resolve(event);
+  console.log('first post-processing');
+  return result;
+}
+
+/** @type {import('@sveltejs/kit').Handle} */
+async function second({ event, resolve }) {
+  console.log('second pre-processing');
+  const result = await resolve(event);
+  console.log('second post-processing');
+  return result;
+}
+
+export const handle = sequence(first, second);
+```
+
+### Example with Transform Options
+
+```js
+// src/hooks.server.js
+import { sequence } from '@sveltejs/kit/hooks';
+
+/** @type {import('@sveltejs/kit').Handle} */
+async function first({ event, resolve }) {
+  console.log('first pre-processing');
+  const result = await resolve(event, {
+    transformPageChunk: ({ html }) => {
+      // transforms are applied in reverse order
+      console.log('first transform');
+      return html;
+    },
+    preload: () => {
+      // this one wins as it's the first defined in the chain
+      console.log('first preload');
+      return true;
+    }
+  });
+  console.log('first post-processing');
+  return result;
+}
+
+/** @type {import('@sveltejs/kit').Handle} */
+async function second({ event, resolve }) {
+  console.log('second pre-processing');
+  const result = await resolve(event, {
+    transformPageChunk: ({ html }) => {
+      console.log('second transform');
+      return html;
+    },
+    preload: () => {
+      console.log('second preload');
+      return true;
+    },
+    filterSerializedResponseHeaders: () => {
+      // this one wins as it's the first defined in the chain
+      console.log('second filterSerializedResponseHeaders');
+      return true;
+    }
+  });
+  console.log('second post-processing');
+  return result;
+}
+
+export const handle = sequence(first, second);
+```
+
+The example above would print:
+
+```
+first pre-processing
+first preload
+second pre-processing
+second filterSerializedResponseHeaders
+second transform
+first transform
+second post-processing
+first post-processing
+```
+
+### Authentication and Logging Example
+
+```js
+// src/hooks.server.js
+import { sequence } from '@sveltejs/kit/hooks';
+
+/** @type {import('@sveltejs/kit').Handle} */
+async function handleAuth({ event, resolve }) {
+  // Check authentication
+  const session = await getSession(event.cookies.get('sessionid'));
+  event.locals.user = session?.user;
+  
+  return resolve(event);
+}
+
+/** @type {import('@sveltejs/kit').Handle} */
+async function handleLogging({ event, resolve }) {
+  const start = Date.now();
+  console.log(`${event.request.method} ${event.url.pathname}`);
+  
+  const response = await resolve(event);
+  
+  const duration = Date.now() - start;
+  console.log(`Completed in ${duration}ms`);
+  
+  return response;
+}
+
+/** @type {import('@sveltejs/kit').Handle} */
+async function handleCORS({ event, resolve }) {
+  const response = await resolve(event);
+  
+  response.headers.set('Access-Control-Allow-Origin', '*');
+  response.headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE');
+  
+  return response;
+}
+
+export const handle = sequence(
+  handleLogging,
+  handleAuth,
+  handleCORS
+);
+```
+
+## Understanding Execution Order
+
+When using `sequence`, handlers execute in a "middleware stack" pattern:
+
+1. **Pre-processing** runs in forward order (first → last)
+2. **Post-processing** runs in reverse order (last → first)
+3. **Transforms** are applied in reverse order
+4. **Options** like `preload` use the first defined value
+
+This pattern allows early handlers to set up context (like authentication) that later handlers can use, while also allowing later handlers to modify the response before it's processed by earlier handlers.

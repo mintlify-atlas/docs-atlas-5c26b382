@@ -1,0 +1,388 @@
+---
+title: '@sveltejs/kit'
+description: Core utilities and functions for SvelteKit applications
+---
+
+The main `@sveltejs/kit` module exports core utilities for building SvelteKit applications, including error handling, redirects, and response helpers.
+
+## error
+
+Throws an error with an HTTP status code and optional message. When called during request handling, this will cause SvelteKit to return an error response without invoking `handleError`.
+
+<Warning>
+Make sure you're not catching the thrown error, which would prevent SvelteKit from handling it.
+</Warning>
+
+<ParamField path="status" type="number" required>
+  The [HTTP status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#client_error_responses). Must be in the range 400-599.
+</ParamField>
+
+<ParamField path="body" type="App.Error | string">
+  An object that conforms to the App.Error type. If a string is passed, it will be used as the message property.
+</ParamField>
+
+<ResponseField name="return" type="never">
+  This function never returns - it always throws.
+</ResponseField>
+
+```ts
+import { error } from '@sveltejs/kit';
+
+// In a server load function
+export function load({ params }) {
+  const post = db.getPost(params.id);
+  
+  if (!post) {
+    error(404, 'Post not found');
+  }
+  
+  return { post };
+}
+```
+
+```ts
+// With custom error object
+error(400, {
+  message: 'Invalid request',
+  code: 'VALIDATION_ERROR'
+});
+```
+
+## isHttpError
+
+Checks whether an error was thrown by the `error` function.
+
+<ParamField path="e" type="unknown" required>
+  The error object to check.
+</ParamField>
+
+<ParamField path="status" type="number">
+  Optional status code to filter for. If provided, the function will only return true if the error matches this specific status.
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  Returns `true` if the error is an HttpError (and optionally matches the status), `false` otherwise.
+</ResponseField>
+
+```ts
+import { error, isHttpError } from '@sveltejs/kit';
+
+try {
+  // some code
+} catch (e) {
+  if (isHttpError(e) && e.status === 404) {
+    // Handle 404 specifically
+  }
+}
+```
+
+## redirect
+
+Redirect a request. When called during request handling, SvelteKit will return a redirect response.
+
+<Warning>
+Make sure you're not catching the thrown redirect, which would prevent SvelteKit from handling it.
+</Warning>
+
+**Most common status codes:**
+- `303 See Other`: redirect as a GET request (often used after a form POST request)
+- `307 Temporary Redirect`: redirect will keep the request method
+- `308 Permanent Redirect`: redirect will keep the request method, SEO will be transferred to the new page
+
+[See all redirect status codes](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#redirection_messages)
+
+<ParamField path="status" type="300 | 301 | 302 | 303 | 304 | 305 | 306 | 307 | 308" required>
+  The [HTTP status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#redirection_messages). Must be in the range 300-308.
+</ParamField>
+
+<ParamField path="location" type="string | URL" required>
+  The location to redirect to.
+</ParamField>
+
+<ResponseField name="return" type="never">
+  This function never returns - it always throws a Redirect.
+</ResponseField>
+
+```ts
+import { redirect } from '@sveltejs/kit';
+
+export function load() {
+  redirect(307, '/login');
+}
+```
+
+```ts
+// After form submission
+export const actions = {
+  default: async ({ request }) => {
+    // process form...
+    redirect(303, '/success');
+  }
+};
+```
+
+## isRedirect
+
+Checks whether an error is a redirect thrown by the `redirect` function.
+
+<ParamField path="e" type="unknown" required>
+  The object to check.
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  Returns `true` if the error is a Redirect, `false` otherwise.
+</ResponseField>
+
+```ts
+import { isRedirect } from '@sveltejs/kit';
+
+try {
+  // some code that might redirect
+} catch (e) {
+  if (isRedirect(e)) {
+    // Handle redirect
+  }
+}
+```
+
+## json
+
+Create a JSON `Response` object from the supplied data.
+
+<ParamField path="data" type="any" required>
+  The value that will be serialized as JSON.
+</ParamField>
+
+<ParamField path="init" type="ResponseInit">
+  Options such as `status` and `headers` that will be added to the response. `Content-Type: application/json` and `Content-Length` headers will be added automatically.
+</ParamField>
+
+<ResponseField name="return" type="Response">
+  A Response object with JSON content.
+</ResponseField>
+
+```ts
+import { json } from '@sveltejs/kit';
+
+export function GET() {
+  return json({
+    message: 'Hello world',
+    timestamp: Date.now()
+  });
+}
+```
+
+```ts
+// With custom status and headers
+export function POST() {
+  return json(
+    { success: true },
+    { 
+      status: 201,
+      headers: {
+        'cache-control': 'max-age=60'
+      }
+    }
+  );
+}
+```
+
+## text
+
+Create a `Response` object from the supplied body.
+
+<ParamField path="body" type="string" required>
+  The value that will be used as-is.
+</ParamField>
+
+<ParamField path="init" type="ResponseInit">
+  Options such as `status` and `headers` that will be added to the response. A `Content-Length` header will be added automatically.
+</ParamField>
+
+<ResponseField name="return" type="Response">
+  A Response object with text content.
+</ResponseField>
+
+```ts
+import { text } from '@sveltejs/kit';
+
+export function GET() {
+  return text('Hello world');
+}
+```
+
+```ts
+// With custom headers
+export function GET() {
+  return text(
+    'Hello world',
+    {
+      headers: {
+        'content-type': 'text/plain; charset=utf-8'
+      }
+    }
+  );
+}
+```
+
+## fail
+
+Create an `ActionFailure` object. Use this to return data and an appropriate status code when form submission fails.
+
+<ParamField path="status" type="number" required>
+  The [HTTP status code](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status#client_error_responses). Must be in the range 400-599.
+</ParamField>
+
+<ParamField path="data" type="T">
+  Data associated with the failure (e.g. validation errors).
+</ParamField>
+
+<ResponseField name="return" type="ActionFailure<T>">
+  An ActionFailure object containing the status and data.
+</ResponseField>
+
+```ts
+import { fail } from '@sveltejs/kit';
+
+export const actions = {
+  default: async ({ request }) => {
+    const data = await request.formData();
+    const email = data.get('email');
+    
+    if (!email) {
+      return fail(400, { 
+        error: 'Email is required',
+        email 
+      });
+    }
+    
+    // process form...
+  }
+};
+```
+
+## isActionFailure
+
+Checks whether an object is an action failure returned by the `fail` function.
+
+<ParamField path="e" type="unknown" required>
+  The object to check.
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  Returns `true` if the object is an ActionFailure, `false` otherwise.
+</ResponseField>
+
+```ts
+import { isActionFailure } from '@sveltejs/kit';
+
+const result = await fetch('/api/endpoint');
+if (isActionFailure(result)) {
+  console.log('Action failed with status:', result.status);
+}
+```
+
+## invalid
+
+Throw a validation error to imperatively fail form validation. Can be used in combination with `issue` passed to form actions to create field-specific issues.
+
+<Info>
+Available since version 2.47.3
+</Info>
+
+<ParamField path="issues" type="StandardSchemaV1.Issue | string" required>
+  One or more validation issues. Can be issue objects or simple error message strings.
+</ParamField>
+
+<ResponseField name="return" type="never">
+  This function never returns - it always throws a ValidationError.
+</ResponseField>
+
+```ts
+import { invalid } from '@sveltejs/kit';
+import { form } from '$app/server';
+import { tryLogin } from '$lib/server/auth';
+import * as v from 'valibot';
+
+export const login = form(
+  v.object({ name: v.string(), _password: v.string() }),
+  async ({ name, _password }) => {
+    const success = tryLogin(name, _password);
+    if (!success) {
+      invalid('Incorrect username or password');
+    }
+    
+    // ...
+  }
+);
+```
+
+## isValidationError
+
+Checks whether an error is a validation error thrown by the `invalid` function.
+
+<Info>
+Available since version 2.47.3
+</Info>
+
+<ParamField path="e" type="unknown" required>
+  The object to check.
+</ParamField>
+
+<ResponseField name="return" type="boolean">
+  Returns `true` if the error is a ValidationError, `false` otherwise.
+</ResponseField>
+
+```ts
+import { isValidationError } from '@sveltejs/kit';
+
+try {
+  // validation code
+} catch (e) {
+  if (isValidationError(e)) {
+    console.log('Validation failed:', e.issues);
+  }
+}
+```
+
+## normalizeUrl
+
+Strips possible SvelteKit-internal suffixes and trailing slashes from the URL pathname. Returns the normalized URL as well as a method for adding the potential suffix back based on a new pathname (possibly including search) or URL.
+
+<Info>
+Available since version 2.18.0
+</Info>
+
+<ParamField path="url" type="URL | string" required>
+  The URL to normalize.
+</ParamField>
+
+<ResponseField name="url" type="URL">
+  The normalized URL object.
+</ResponseField>
+
+<ResponseField name="wasNormalized" type="boolean">
+  Whether the URL was actually normalized (had suffixes or trailing slash).
+</ResponseField>
+
+<ResponseField name="denormalize" type="(url?: string | URL) => URL">
+  A function to add the suffix back to a new URL.
+</ResponseField>
+
+```ts
+import { normalizeUrl } from '@sveltejs/kit';
+
+const { url, denormalize } = normalizeUrl('/blog/post/__data.json');
+console.log(url.pathname); // /blog/post
+console.log(denormalize('/blog/post/a')); // /blog/post/a/__data.json
+```
+
+## VERSION
+
+The current version of SvelteKit.
+
+```ts
+import { VERSION } from '@sveltejs/kit';
+
+console.log('SvelteKit version:', VERSION);
+```
